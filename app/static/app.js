@@ -333,6 +333,12 @@ function renderBriefing(b) {
     const title = document.createElement("div");
     title.className = "focus-title";
     title.textContent = item.title;
+    if (item.suggested_assignee) {
+      const assignee = document.createElement("span");
+      assignee.className = "delegate-badge";
+      assignee.textContent = `추천 담당: ${item.suggested_assignee}`;
+      title.appendChild(assignee);
+    }
     const reason = document.createElement("div");
     reason.className = "focus-reason";
     reason.textContent = item.reason;
@@ -416,8 +422,48 @@ async function refreshUsersTable() {
     tdUsername.textContent = u.username;
     const tdName = document.createElement("td");
     tdName.textContent = u.name;
+
+    const tdTeam = document.createElement("td");
+    const teamInput = document.createElement("input");
+    teamInput.className = "inline-input";
+    teamInput.placeholder = "팀";
+    teamInput.value = u.team || "";
+    teamInput.onchange = async () => {
+      try {
+        await api(`/api/users/${u.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ team: teamInput.value.trim() }),
+        });
+        toast("팀을 변경했습니다");
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+    tdTeam.appendChild(teamInput);
+
     const tdRole = document.createElement("td");
-    tdRole.textContent = u.role === "admin" ? "관리자" : "직원";
+    const roleSelect = document.createElement("select");
+    roleSelect.className = "inline-select";
+    for (const [value, label] of [["member", "직원"], ["leader", "팀장"], ["admin", "관리자"]]) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      if (u.role === value) opt.selected = true;
+      roleSelect.appendChild(opt);
+    }
+    roleSelect.onchange = async () => {
+      try {
+        await api(`/api/users/${u.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ role: roleSelect.value }),
+        });
+        toast("역할을 변경했습니다");
+      } catch (err) {
+        toast(err.message);
+        await refreshUsersTable();
+      }
+    };
+    tdRole.appendChild(roleSelect);
 
     const tdActions = document.createElement("td");
     tdActions.className = "row-actions";
@@ -451,7 +497,7 @@ async function refreshUsersTable() {
     };
     tdActions.append(resetBtn, delBtn);
 
-    tr.append(tdUsername, tdName, tdRole, tdActions);
+    tr.append(tdUsername, tdName, tdTeam, tdRole, tdActions);
     tbody.appendChild(tr);
   }
 }
@@ -480,6 +526,7 @@ function setupUserActions() {
         body: JSON.stringify({
           username: document.getElementById("new-username").value.trim(),
           name: document.getElementById("new-name").value.trim(),
+          team: document.getElementById("new-team").value.trim(),
           password: document.getElementById("new-password").value,
           role: document.getElementById("new-role").value,
         }),

@@ -224,6 +224,22 @@ h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 }
 .focus-title { font-size: 13.5px; font-weight: 600; line-height: 1.4; }
 .focus-reason { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.55; }
+.delegate-badge {
+  margin-left: 8px; font-size: 11px; font-weight: 500;
+  color: var(--low); border: 1px solid var(--low);
+  border-radius: 4px; padding: 1px 6px; vertical-align: 1px;
+}
+.inline-input {
+  border: 1px solid transparent; border-radius: 4px;
+  font-size: 13px; padding: 3px 6px; width: 90px;
+  background: transparent; font-family: inherit;
+}
+.inline-input:hover, .inline-input:focus { border-color: var(--border); background: #fff; outline: none; }
+.inline-select {
+  border: 1px solid var(--border); border-radius: 4px;
+  font-size: 12.5px; padding: 3px 4px; font-family: inherit; background: #fff;
+}
+
 .briefing-tip {
   margin-top: 14px; padding: 10px 14px;
   background: var(--bg); border-radius: 6px;

@@ -170,6 +170,13 @@ class UserCreateBody(BaseModel):
     name: str
     password: str
     role: str = "member"
+    team: str = ""
+
+
+class UserPatchBody(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    team: str | None = None
 
 
 @app.get("/api/users")
@@ -184,8 +191,8 @@ def api_create_user(body: UserCreateBody, _: dict = Depends(require_admin)):
         raise HTTPException(400, "아이디와 이름을 입력하세요")
     if len(body.password) < 8:
         raise HTTPException(400, "비밀번호는 8자 이상이어야 합니다")
-    if body.role not in ("admin", "member"):
-        raise HTTPException(400, "역할은 admin 또는 member만 가능합니다")
+    if body.role not in database.VALID_ROLES:
+        raise HTTPException(400, "역할은 admin/leader/member만 가능합니다")
     if database.get_user_by_username(username):
         raise HTTPException(409, "이미 존재하는 아이디입니다")
     return database.create_user(
@@ -193,7 +200,24 @@ def api_create_user(body: UserCreateBody, _: dict = Depends(require_admin)):
         name=body.name.strip(),
         password_hash=auth.hash_password(body.password),
         role=body.role,
+        team=body.team.strip(),
     )
+
+
+@app.patch("/api/users/{user_id}")
+def api_patch_user(user_id: int, body: UserPatchBody, _: dict = Depends(require_admin)):
+    target = database.get_user(user_id)
+    if not target:
+        raise HTTPException(404, "사용자를 찾을 수 없습니다")
+    if body.role is not None:
+        if body.role not in database.VALID_ROLES:
+            raise HTTPException(400, "역할은 admin/leader/member만 가능합니다")
+        if target["role"] == "admin" and body.role != "admin" and database.count_admins() <= 1:
+            raise HTTPException(400, "마지막 관리자의 역할은 변경할 수 없습니다")
+    fields = body.model_dump(exclude_unset=True)
+    if "team" in fields and fields["team"] is not None:
+        fields["team"] = fields["team"].strip()
+    return database.update_user(user_id, fields)
 
 
 @app.delete("/api/users/{user_id}")

@@ -75,15 +75,17 @@
         <button id="close-users-modal" class="btn-ghost">닫기</button>
       </div>
       <table class="users-table">
-        <thead><tr><th>아이디</th><th>이름</th><th>역할</th><th></th></tr></thead>
+        <thead><tr><th>아이디</th><th>이름</th><th>팀</th><th>역할</th><th></th></tr></thead>
         <tbody id="users-tbody"></tbody>
       </table>
       <form id="add-user-form" class="add-user-form">
         <input type="text" id="new-username" placeholder="아이디" required>
         <input type="text" id="new-name" placeholder="이름" required>
+        <input type="text" id="new-team" placeholder="팀 (예: 마케팅)">
         <input type="password" id="new-password" placeholder="비밀번호 (8자 이상)" minlength="8" required>
         <select id="new-role">
           <option value="member">직원</option>
+          <option value="leader">팀장</option>
           <option value="admin">관리자</option>
         </select>
         <button type="submit" class="btn-primary">추가</button>

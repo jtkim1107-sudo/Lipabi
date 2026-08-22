@@ -39,6 +39,7 @@ def init_db() -> None:
                 name TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'member',
+                team TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS sessions (
@@ -106,6 +107,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE feedback ADD COLUMN personal_consumed INTEGER NOT NULL DEFAULT 0"
         )
+    user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+    if "team" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN team TEXT NOT NULL DEFAULT ''")
 
 
 # ── 에이전트 프로필 ─────────────────────────────────────
@@ -265,17 +269,42 @@ def mark_personal_consumed(ids: list[int]) -> None:
 
 # ── 사용자 ──────────────────────────────────────────────
 
-def create_user(username: str, name: str, password_hash: str, role: str = "member") -> dict:
+VALID_ROLES = ("admin", "leader", "member")
+
+
+def create_user(username: str, name: str, password_hash: str, role: str = "member",
+                team: str = "") -> dict:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO users (username, name, password_hash, role, created_at) VALUES (?,?,?,?,?)",
-            (username, name, password_hash, role, _now()),
+            "INSERT INTO users (username, name, password_hash, role, team, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (username, name, password_hash, role, team, _now()),
         )
         row = conn.execute(
-            "SELECT id, username, name, role, created_at FROM users WHERE id = ?",
+            "SELECT id, username, name, role, team, created_at FROM users WHERE id = ?",
             (cur.lastrowid,),
         ).fetchone()
         return dict(row)
+
+
+def update_user(user_id: int, fields: dict) -> dict | None:
+    allowed = {"name", "role", "team"}
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        return get_user(user_id)
+    with get_conn() as conn:
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", (*updates.values(), user_id))
+    return get_user(user_id)
+
+
+def get_team_members(team: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, username, name, role, team FROM users WHERE team = ? ORDER BY id",
+            (team,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_user_by_username(username: str) -> dict | None:
@@ -287,7 +316,7 @@ def get_user_by_username(username: str) -> dict | None:
 def list_users() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id, username, name, role, created_at FROM users ORDER BY id"
+            "SELECT id, username, name, role, team, created_at FROM users ORDER BY id"
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -305,7 +334,8 @@ def count_admins() -> int:
 def get_user(user_id: int) -> dict | None:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, username, name, role, created_at FROM users WHERE id = ?", (user_id,)
+            "SELECT id, username, name, role, team, created_at FROM users WHERE id = ?",
+            (user_id,),
         ).fetchone()
         return dict(row) if row else None
 
@@ -338,7 +368,7 @@ def get_session_user(token: str) -> dict | None:
     with get_conn() as conn:
         conn.execute("DELETE FROM sessions WHERE expires_at < ?", (_now(),))
         row = conn.execute(
-            """SELECT u.id, u.username, u.name, u.role
+            """SELECT u.id, u.username, u.name, u.role, u.team
                FROM sessions s JOIN users u ON u.id = s.user_id
                WHERE s.token = ? AND s.expires_at >= ?""",
             (token, _now()),
