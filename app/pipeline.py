@@ -19,6 +19,26 @@ def _build_roster() -> str:
     return "\n".join(lines)
 
 
+def data_request_to_task(dr: dict, priority: str = "medium") -> dict:
+    """데이터 요청을 '데이터 연결' 업무 카드로 만들고 요청을 tasked로 표시한다."""
+    description = f"분석가 요청 사유: {dr['reason']}"
+    if dr.get("suggested_dax"):
+        description += (
+            "\n\n제안 DAX 쿼리 (config/queries.json에 추가):\n" + dr["suggested_dax"]
+        )
+    task = database.create_task(
+        title=f"데이터 연결: {dr['title']}",
+        description=description,
+        priority=priority,
+        category="데이터",
+        status="todo",
+        source="manual",
+        report_id=dr.get("report_id"),
+    )
+    database.set_data_request_status(dr["id"], "tasked")
+    return task
+
+
 def run_daily_pipeline() -> dict:
     """전체 파이프라인을 실행하고 결과 요약을 반환한다."""
     database.init_db()
@@ -61,17 +81,23 @@ def run_daily_pipeline() -> dict:
         created.append(task)
 
     # 분석가의 데이터 요청 저장 (열려 있는 동일 요청은 중복 생성 안 함)
+    # blocking 요청은 관리자 확인을 기다리지 않고 즉시 높은 우선순위 업무로 만든다
     requests_created = 0
+    blocking_tasks = 0
     for dr in result.data_requests:
         if database.find_active_request_by_title(dr.title):
             continue
-        database.create_data_request(
+        row = database.create_data_request(
             title=dr.title,
             reason=dr.reason,
             suggested_dax=dr.suggested_dax or "",
             report_id=report_id,
+            blocking=dr.blocking,
         )
         requests_created += 1
+        if dr.blocking:
+            data_request_to_task(row, priority="high")
+            blocking_tasks += 1
 
     # 아침 자동화: 분석 직후 전 직원 브리핑을 미리 생성해 둔다
     briefings_created = 0
@@ -95,5 +121,6 @@ def run_daily_pipeline() -> dict:
         "tasks_created": len(created),
         "briefings_created": briefings_created,
         "data_requests_created": requests_created,
+        "blocking_tasks_created": blocking_tasks,
         "data_errors": errors,
     }

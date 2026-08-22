@@ -86,6 +86,7 @@ def init_db() -> None:
                 title TEXT NOT NULL,
                 reason TEXT NOT NULL DEFAULT '',
                 suggested_dax TEXT NOT NULL DEFAULT '',
+                blocking INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'open',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -127,6 +128,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for col in ("suggested_assignee", "deliverable", "deliverable_summary"):
         if col not in task_cols:
             conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    dr_cols = {r[1] for r in conn.execute("PRAGMA table_info(data_requests)")}
+    if "blocking" not in dr_cols:
+        conn.execute("ALTER TABLE data_requests ADD COLUMN blocking INTEGER NOT NULL DEFAULT 0")
 
 
 # ── 에이전트 프로필 ─────────────────────────────────────
@@ -433,14 +437,14 @@ DATA_REQUEST_STATUSES = ("open", "tasked", "resolved", "dismissed")
 
 
 def create_data_request(title: str, reason: str = "", suggested_dax: str = "",
-                        report_id: int | None = None) -> dict:
+                        report_id: int | None = None, blocking: bool = False) -> dict:
     now = _now()
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO data_requests (report_id, title, reason, suggested_dax,
-                                          status, created_at, updated_at)
-               VALUES (?,?,?,?, 'open', ?, ?)""",
-            (report_id, title, reason, suggested_dax, now, now),
+                                          blocking, status, created_at, updated_at)
+               VALUES (?,?,?,?,?, 'open', ?, ?)""",
+            (report_id, title, reason, suggested_dax, int(blocking), now, now),
         )
         row = conn.execute(
             "SELECT * FROM data_requests WHERE id = ?", (cur.lastrowid,)

@@ -72,6 +72,8 @@ h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
   font-size: 10.5px; color: var(--medium); border: 1px solid var(--medium);
   border-radius: 4px; padding: 1px 5px;
 }
+.dr-status.blocking { color: var(--high); border-color: var(--high); font-weight: 600; }
+.data-requests h3.dr-warning { color: var(--high); }
 .dr-actions { margin-left: auto; display: flex; gap: 6px; }
 .dr-reason { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.55; }
 .dr-item details { margin-top: 6px; }

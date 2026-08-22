@@ -67,6 +67,14 @@ async function loadDataRequests() {
   box.classList.remove("hidden");
   const isAdmin = currentUser?.role === "admin";
 
+  // 차단 요청이 있으면 헤더를 경고로
+  const header = box.querySelector("h3");
+  const hasBlocking = requests.some((r) => r.blocking);
+  header.textContent = hasBlocking
+    ? "⚠️ 분석가가 요청한 데이터 — 데이터 부족으로 일부 분석이 제한되고 있습니다"
+    : "분석가가 요청한 데이터";
+  header.classList.toggle("dr-warning", hasBlocking);
+
   for (const dr of requests) {
     const li = document.createElement("li");
     li.className = "dr-item";
@@ -77,6 +85,13 @@ async function loadDataRequests() {
     title.className = "dr-title";
     title.textContent = dr.title;
     head.appendChild(title);
+    if (dr.blocking) {
+      const bl = document.createElement("span");
+      bl.className = "dr-status blocking";
+      bl.textContent = "분석 차단";
+      bl.title = "이 데이터가 없어 핵심 질문에 답하지 못하고 있습니다";
+      head.appendChild(bl);
+    }
     if (dr.status === "tasked") {
       const st = document.createElement("span");
       st.className = "dr-status";

@@ -29,6 +29,10 @@ class DataRequestItem(BaseModel):
         default=None,
         description="Power BI에 있을 법한 데이터면 EVALUATE로 시작하는 예시 DAX 쿼리, 외부 데이터면 null",
     )
+    blocking: bool = Field(
+        default=False,
+        description="이 데이터가 없어서 오늘의 핵심 질문(급락 원인, 이상 징후 원인 등)에 답할 수 없으면 true — 단순히 있으면 좋은 정도면 false",
+    )
 
 
 class AnalysisResult(BaseModel):
@@ -51,6 +55,8 @@ BASE_SYSTEM_PROMPT = """당신은 회사의 데이터 분석가입니다. 매일
 - 급격한 하락, 이상치, 전일/전주 대비 변화에 특히 주목합니다.
 - 분석에 꼭 필요한 데이터가 없어서 판단이 제한되면, 추측하지 말고 data_requests로
   그 데이터를 요청합니다 (무엇이, 왜 필요한지). 이미 대기 중인 요청은 다시 요청하지 않습니다.
+- 데이터가 없어 원인을 확인할 수 없는 인사이트는 "○○ 데이터가 없어 확인 불가"라고
+  명시하고, 그 데이터가 오늘의 핵심 질문에 답하는 데 필수라면 blocking=true로 요청합니다.
 - 모든 출력은 한국어로 작성합니다."""
 
 

@@ -403,22 +403,8 @@ def api_data_request_to_task(request_id: int, _: dict = Depends(require_admin)):
     dr = database.get_data_request(request_id)
     if not dr:
         raise HTTPException(404, "데이터 요청을 찾을 수 없습니다")
-    description = f"분석가 요청 사유: {dr['reason']}"
-    if dr["suggested_dax"]:
-        description += (
-            "\n\n제안 DAX 쿼리 (config/queries.json에 추가):\n" + dr["suggested_dax"]
-        )
-    task = database.create_task(
-        title=f"데이터 연결: {dr['title']}",
-        description=description,
-        priority="medium",
-        category="데이터",
-        status="todo",
-        source="manual",
-        report_id=dr["report_id"],
-    )
-    database.set_data_request_status(request_id, "tasked")
-    return task
+    priority = "high" if dr.get("blocking") else "medium"
+    return pipeline.data_request_to_task(dr, priority=priority)
 
 
 # ── 페이지 ──────────────────────────────────────────────
