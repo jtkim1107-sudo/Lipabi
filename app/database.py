@@ -47,6 +47,24 @@ def init_db() -> None:
                 expires_at TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS agent_profile (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                name TEXT NOT NULL DEFAULT '나의 분석가',
+                instructions TEXT NOT NULL DEFAULT '',
+                lessons TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                ref_id INTEGER,
+                signal TEXT NOT NULL,
+                comment TEXT NOT NULL DEFAULT '',
+                context TEXT NOT NULL DEFAULT '',
+                user_name TEXT NOT NULL DEFAULT '',
+                consumed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 report_id INTEGER REFERENCES reports(id) ON DELETE SET NULL,
@@ -62,6 +80,74 @@ def init_db() -> None:
             );
             """
         )
+
+
+# ── 에이전트 프로필 ─────────────────────────────────────
+
+def get_agent_profile() -> dict:
+    """프로필 단일 행을 반환 (없으면 기본값으로 생성)."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM agent_profile WHERE id = 1").fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO agent_profile (id, name, instructions, lessons, updated_at) "
+                "VALUES (1, '나의 분석가', '', '', ?)",
+                (_now(),),
+            )
+            row = conn.execute("SELECT * FROM agent_profile WHERE id = 1").fetchone()
+        return dict(row)
+
+
+def update_agent_profile(name: str | None = None, instructions: str | None = None,
+                         lessons: str | None = None) -> dict:
+    get_agent_profile()
+    updates = {
+        k: v
+        for k, v in (("name", name), ("instructions", instructions), ("lessons", lessons))
+        if v is not None
+    }
+    updates["updated_at"] = _now()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(f"UPDATE agent_profile SET {set_clause} WHERE id = 1", (*updates.values(),))
+    return get_agent_profile()
+
+
+# ── 피드백 ──────────────────────────────────────────────
+
+def add_feedback(kind: str, signal: str, ref_id: int | None = None, comment: str = "",
+                 context: str = "", user_name: str = "") -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO feedback (kind, ref_id, signal, comment, context, user_name, created_at)
+               VALUES (?,?,?,?,?,?,?)""",
+            (kind, ref_id, signal, comment, context, user_name, _now()),
+        )
+        row = conn.execute("SELECT * FROM feedback WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+
+def list_feedback(limit: int = 50, unconsumed_only: bool = False) -> list[dict]:
+    q = "SELECT * FROM feedback"
+    if unconsumed_only:
+        q += " WHERE consumed = 0"
+    q += " ORDER BY id DESC LIMIT ?"
+    with get_conn() as conn:
+        rows = conn.execute(q, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def count_unconsumed_feedback() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) FROM feedback WHERE consumed = 0").fetchone()[0]
+
+
+def mark_feedback_consumed(ids: list[int]) -> None:
+    if not ids:
+        return
+    placeholders = ",".join("?" * len(ids))
+    with get_conn() as conn:
+        conn.execute(f"UPDATE feedback SET consumed = 1 WHERE id IN ({placeholders})", ids)
 
 
 # ── 사용자 ──────────────────────────────────────────────

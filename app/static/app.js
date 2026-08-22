@@ -1,6 +1,7 @@
 /* Lipabi 칸반보드 프런트엔드 */
 
 let tasks = [];
+let latestReportId = null;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -37,6 +38,7 @@ async function loadReport() {
     return;
   }
   panel.classList.remove("hidden");
+  latestReportId = report.id;
   document.getElementById("report-date").textContent = report.run_date;
   document.getElementById("report-summary").textContent = report.summary;
   const ul = document.getElementById("report-insights");
@@ -69,7 +71,13 @@ function renderCard(task) {
   del.textContent = "✕";
   del.onclick = async () => {
     if (!confirm(`"${task.title}" 업무를 삭제할까요?`)) return;
-    await api(`/api/tasks/${task.id}`, { method: "DELETE" });
+    let query = "";
+    // AI 제안을 거절하는 경우 이유를 물어 학습에 활용
+    if (task.source === "ai" && task.status === "suggested") {
+      const reason = prompt("삭제 이유 (선택 — 분석가 교육에 활용됩니다):") || "";
+      if (reason.trim()) query = `?reason=${encodeURIComponent(reason.trim())}`;
+    }
+    await api(`/api/tasks/${task.id}${query}`, { method: "DELETE" });
     await loadTasks();
   };
   top.append(title, del);
@@ -174,8 +182,97 @@ async function loadMe() {
   document.getElementById("user-name").textContent = `${me.name}님`;
   if (me.role === "admin") {
     document.getElementById("manage-users-btn").classList.remove("hidden");
+    document.getElementById("agent-btn").classList.remove("hidden");
   }
   return me;
+}
+
+/* ── 내 분석가 (교육) ────────────────────────── */
+
+async function openAgentModal() {
+  const profile = await api("/api/agent");
+  document.getElementById("agent-name").value = profile.name || "";
+  document.getElementById("agent-instructions").value = profile.instructions || "";
+  document.getElementById("agent-lessons").textContent =
+    profile.lessons?.trim() || "(아직 학습된 교훈이 없습니다)";
+  document.getElementById("pending-fb").textContent = profile.pending_feedback ?? 0;
+  document.getElementById("train-changelog").classList.add("hidden");
+  document.getElementById("agent-modal").classList.remove("hidden");
+}
+
+function setupAgentModal() {
+  const modal = document.getElementById("agent-modal");
+  document.getElementById("agent-btn").onclick = openAgentModal;
+  document.getElementById("close-agent-modal").onclick = () => modal.classList.add("hidden");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+
+  document.getElementById("save-agent-btn").onclick = async () => {
+    try {
+      await api("/api/agent", {
+        method: "PUT",
+        body: JSON.stringify({
+          name: document.getElementById("agent-name").value.trim(),
+          instructions: document.getElementById("agent-instructions").value,
+        }),
+      });
+      toast("분석가 프로필을 저장했습니다 — 다음 분석부터 반영됩니다");
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+
+  const trainBtn = document.getElementById("train-agent-btn");
+  trainBtn.onclick = async () => {
+    trainBtn.disabled = true;
+    trainBtn.textContent = "학습 중…";
+    try {
+      const result = await api("/api/agent/train", { method: "POST" });
+      if (!result.trained) {
+        toast(result.message);
+      } else {
+        document.getElementById("agent-lessons").textContent = result.lessons;
+        document.getElementById("pending-fb").textContent = 0;
+        const log = document.getElementById("train-changelog");
+        log.textContent = `✓ 피드백 ${result.feedback_count}건 반영 — ${result.changelog}`;
+        log.classList.remove("hidden");
+        toast("학습 완료! 다음 분석부터 반영됩니다");
+      }
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      trainBtn.disabled = false;
+      trainBtn.innerHTML = `피드백 학습하기 (<span id="pending-fb">${document.getElementById("pending-fb")?.textContent ?? 0}</span>건 대기)`;
+    }
+  };
+}
+
+function setupReportFeedback() {
+  const send = async (signal) => {
+    if (!latestReportId) return;
+    const comment = prompt(
+      signal === "positive"
+        ? "어떤 점이 좋았나요? (선택)"
+        : "어떤 점이 아쉬웠나요? (선택 — 분석가 교육에 활용됩니다)"
+    ) || "";
+    try {
+      await api("/api/feedback", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "report",
+          ref_id: latestReportId,
+          signal,
+          comment: comment.trim(),
+        }),
+      });
+      toast("피드백이 기록되었습니다");
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  document.getElementById("fb-good").onclick = () => send("positive");
+  document.getElementById("fb-bad").onclick = () => send("negative");
 }
 
 async function refreshUsersTable() {
@@ -313,6 +410,8 @@ function setupActions() {
   setupDragAndDrop();
   setupActions();
   setupUserActions();
+  setupAgentModal();
+  setupReportFeedback();
   await Promise.all([loadMe(), loadReport(), loadTasks()]);
   // 다른 직원의 변경 사항을 주기적으로 반영
   setInterval(loadTasks, 15000);

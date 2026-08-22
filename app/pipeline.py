@@ -21,7 +21,8 @@ def run_daily_pipeline() -> dict:
             + "; ".join(errors)
         )
 
-    result = analyzer.analyze(query_results, run_date)
+    profile = database.get_agent_profile()
+    result = analyzer.analyze(query_results, run_date, profile)
 
     data_notes = "; ".join(errors)
     report_id = database.create_report(

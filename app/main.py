@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, config, database, pipeline
+from . import auth, coach, config, database, pipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -220,6 +220,66 @@ def api_reset_password(user_id: int, body: PasswordResetBody, _: dict = Depends(
     return {"ok": True}
 
 
+# ── 나의 분석가 (에이전트 프로필 / 교육) ────────────────
+
+class AgentUpdateBody(BaseModel):
+    name: str | None = None
+    instructions: str | None = None
+
+
+class FeedbackBody(BaseModel):
+    kind: str  # 'report' | 'task'
+    ref_id: int | None = None
+    signal: str  # 'positive' | 'negative'
+    comment: str = ""
+    context: str = ""
+
+
+@app.get("/api/agent")
+def api_get_agent(user: dict = Depends(require_user)):
+    profile = database.get_agent_profile()
+    profile["pending_feedback"] = database.count_unconsumed_feedback()
+    if user["role"] != "admin":
+        # 일반 직원에게는 이름만 공개
+        return {"name": profile["name"]}
+    return profile
+
+
+@app.put("/api/agent")
+def api_update_agent(body: AgentUpdateBody, _: dict = Depends(require_admin)):
+    return database.update_agent_profile(name=body.name, instructions=body.instructions)
+
+
+@app.post("/api/agent/train")
+def api_train_agent(_: dict = Depends(require_admin)):
+    try:
+        return coach.train()
+    except Exception as e:
+        logger.exception("에이전트 학습 실패")
+        raise HTTPException(500, f"학습 실패: {e}")
+
+
+@app.post("/api/feedback")
+def api_add_feedback(body: FeedbackBody, user: dict = Depends(require_user)):
+    if body.signal not in ("positive", "negative"):
+        raise HTTPException(400, "signal은 positive 또는 negative여야 합니다")
+    if body.kind not in ("report", "task"):
+        raise HTTPException(400, "kind는 report 또는 task여야 합니다")
+    return database.add_feedback(
+        kind=body.kind,
+        signal=body.signal,
+        ref_id=body.ref_id,
+        comment=body.comment.strip(),
+        context=body.context.strip(),
+        user_name=user["name"],
+    )
+
+
+@app.get("/api/feedback")
+def api_list_feedback(_: dict = Depends(require_admin)):
+    return database.list_feedback(limit=50)
+
+
 # ── 페이지 ──────────────────────────────────────────────
 
 @app.get("/")
@@ -269,20 +329,46 @@ def api_create_task(body: TaskCreate, _: dict = Depends(require_user)):
 
 
 @app.patch("/api/tasks/{task_id}")
-def api_update_task(task_id: int, body: TaskUpdate, _: dict = Depends(require_user)):
+def api_update_task(task_id: int, body: TaskUpdate, user: dict = Depends(require_user)):
+    before = database.get_task(task_id)
+    if before is None:
+        raise HTTPException(404, "업무를 찾을 수 없습니다")
     try:
         task = database.update_task(task_id, body.model_dump(exclude_unset=True))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    if task is None:
-        raise HTTPException(404, "업무를 찾을 수 없습니다")
+    # 암묵적 학습 신호: AI 제안을 실제 업무로 수락하면 긍정 피드백
+    if (
+        before["source"] == "ai"
+        and before["status"] == "suggested"
+        and task["status"] in ("todo", "in_progress")
+    ):
+        database.add_feedback(
+            kind="task_accepted",
+            signal="positive",
+            ref_id=task_id,
+            context=before["title"],
+            user_name=user["name"],
+        )
     return task
 
 
 @app.delete("/api/tasks/{task_id}")
-def api_delete_task(task_id: int, _: dict = Depends(require_user)):
-    if not database.delete_task(task_id):
+def api_delete_task(task_id: int, user: dict = Depends(require_user), reason: str = ""):
+    task = database.get_task(task_id)
+    if task is None:
         raise HTTPException(404, "업무를 찾을 수 없습니다")
+    database.delete_task(task_id)
+    # 암묵적 학습 신호: AI 제안을 채택 없이 삭제하면 부정 피드백
+    if task["source"] == "ai" and task["status"] == "suggested":
+        database.add_feedback(
+            kind="task_rejected",
+            signal="negative",
+            ref_id=task_id,
+            comment=reason.strip(),
+            context=task["title"],
+            user_name=user["name"],
+        )
     return {"ok": True}
 
 

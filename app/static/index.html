@@ -15,6 +15,7 @@
     <div class="header-right">
       <button id="run-btn" class="btn-primary">지금 분석 실행</button>
       <span id="user-name" class="user-name"></span>
+      <button id="agent-btn" class="btn-ghost hidden">내 분석가</button>
       <button id="manage-users-btn" class="btn-ghost hidden">직원 관리</button>
       <button id="logout-btn" class="btn-ghost">로그아웃</button>
     </div>
@@ -29,6 +30,11 @@
       <p id="report-summary"></p>
       <ul id="report-insights"></ul>
       <p id="report-notes" class="report-notes"></p>
+      <div class="report-feedback">
+        <span>이 분석이 도움됐나요?</span>
+        <button id="fb-good" class="btn-ghost">👍 좋아요</button>
+        <button id="fb-bad" class="btn-ghost">👎 아쉬워요</button>
+      </div>
     </div>
   </section>
 
@@ -80,6 +86,31 @@
         </select>
         <button type="submit" class="btn-primary">추가</button>
       </form>
+    </div>
+  </div>
+
+  <div id="agent-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>내 분석가 교육</h2>
+        <button id="close-agent-modal" class="btn-ghost">닫기</button>
+      </div>
+      <label class="field-label" for="agent-name">이름</label>
+      <input type="text" id="agent-name" class="field-input" placeholder="예: 리파비 수석 분석가">
+      <label class="field-label" for="agent-instructions">나의 지침 — 분석가가 따라야 할 나의 관점과 기준</label>
+      <textarea id="agent-instructions" class="field-textarea" rows="8"
+        placeholder="예)
+- 우리 회사는 재고 회전율을 매출보다 중요하게 본다
+- 업무 지시는 담당 팀(영업/재고/마케팅)을 명시할 것
+- 광고비 관련 제안은 주 단위 예산 한도를 넘지 않는 선에서만
+- 말투는 간결하게, 숫자는 반드시 전주 대비 %로"></textarea>
+      <div class="agent-actions">
+        <button id="save-agent-btn" class="btn-primary">저장</button>
+        <button id="train-agent-btn" class="btn-primary">피드백 학습하기 (<span id="pending-fb">0</span>건 대기)</button>
+      </div>
+      <label class="field-label">학습된 교훈 — 피드백에서 자동으로 정리됩니다</label>
+      <pre id="agent-lessons" class="lessons-box">(아직 학습된 교훈이 없습니다)</pre>
+      <p id="train-changelog" class="train-changelog hidden"></p>
     </div>
   </div>
 

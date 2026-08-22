@@ -24,7 +24,7 @@ class AnalysisResult(BaseModel):
     tasks: List[SuggestedTask] = Field(description="오늘 팀이 실행해야 할 업무 제안 (3~7개)")
 
 
-SYSTEM_PROMPT = """당신은 회사의 데이터 분석가입니다. 매일 아침 Power BI에서 수집된 \
+BASE_SYSTEM_PROMPT = """당신은 회사의 데이터 분석가입니다. 매일 아침 Power BI에서 수집된 \
 데이터를 검토하고, 경영진과 실무 팀이 바로 실행할 수 있는 업무를 제안합니다.
 
 원칙:
@@ -35,7 +35,30 @@ SYSTEM_PROMPT = """당신은 회사의 데이터 분석가입니다. 매일 아�
 - 모든 출력은 한국어로 작성합니다."""
 
 
-def analyze(query_results: list[dict], run_date: str) -> AnalysisResult:
+def build_system_prompt(profile: dict | None) -> str:
+    """기본 프롬프트에 운영자의 지침과 학습된 교훈을 결합한다."""
+    parts = [BASE_SYSTEM_PROMPT]
+    if profile:
+        if profile.get("name"):
+            parts[0] = f"당신의 이름은 '{profile['name']}'입니다. " + BASE_SYSTEM_PROMPT
+        if profile.get("instructions", "").strip():
+            parts.append(
+                "## 운영자의 지침 (반드시 따르세요)\n"
+                "아래는 이 회사 운영자가 직접 작성한 분석 기준입니다. "
+                "당신은 운영자의 관점과 판단 기준을 대신하는 분석가입니다.\n\n"
+                + profile["instructions"].strip()
+            )
+        if profile.get("lessons", "").strip():
+            parts.append(
+                "## 과거 피드백에서 학습한 교훈\n"
+                "지금까지 운영자와 팀의 피드백을 통해 정리된 교훈입니다. "
+                "분석과 업무 제안에 반영하세요.\n\n"
+                + profile["lessons"].strip()
+            )
+    return "\n\n".join(parts)
+
+
+def analyze(query_results: list[dict], run_date: str, profile: dict | None = None) -> AnalysisResult:
     """수집된 데이터를 Claude에 보내 구조화된 분석 결과를 받는다."""
     sections = []
     for r in query_results:
@@ -54,7 +77,7 @@ def analyze(query_results: list[dict], run_date: str) -> AnalysisResult:
     response = client.messages.parse(
         model=config.ANALYSIS_MODEL,
         max_tokens=16000,
-        system=SYSTEM_PROMPT,
+        system=build_system_prompt(profile),
         messages=[{"role": "user", "content": user_message}],
         output_format=AnalysisResult,
     )
