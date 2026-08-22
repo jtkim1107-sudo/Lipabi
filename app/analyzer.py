@@ -15,7 +15,9 @@ class SuggestedTask(BaseModel):
     title: str = Field(description="업무 제목 (간결한 한 줄)")
     description: str = Field(description="무엇을, 왜, 어떻게 해야 하는지 구체적 설명")
     priority: Literal["high", "medium", "low"]
-    category: str = Field(description="업무 분류 (예: 영업, 재고, 마케팅, 데이터 점검)")
+    category: str = Field(
+        description="업무 분류 — 운영자 지침에 팀 목록이 있으면 담당 팀 이름을 사용 (예: 마케팅팀, 물류팀)"
+    )
     suggested_assignee: Optional[str] = Field(
         default=None,
         description="팀 구성원 명단에서 이 업무에 가장 적합한 사람 이름 (명단이 없거나 판단이 어려우면 null)",

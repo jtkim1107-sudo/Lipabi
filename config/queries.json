@@ -1,19 +1,33 @@
 {
-  "_설명": "매일 아침 Power BI에서 불러올 데이터 목록. dataset_id는 Power BI 데이터셋 URL에서 확인. workspace_id는 '내 작업 영역'이면 비워두고, 특정 작업 영역이면 그룹 ID 입력.",
+  "_설명": "매일 아침 Power BI에서 불러올 데이터 목록. dataset_id는 Power BI 데이터셋 URL에서 확인. workspace_id는 '내 작업 영역'이면 비워두고, 특정 작업 영역이면 그룹 ID 입력. 아래 DAX의 테이블·컬럼명(Sales, Date, Brand 등)은 실제 데이터셋 구조에 맞게 수정 필요.",
   "queries": [
     {
-      "name": "일별 매출",
-      "description": "최근 30일 일별 매출 추이",
+      "name": "일별 매출 추이",
+      "description": "최근 30일 전사 일별 매출 (전주 대비 비교용)",
       "workspace_id": "",
       "dataset_id": "YOUR-DATASET-ID",
       "dax": "EVALUATE TOPN(30, SUMMARIZECOLUMNS('Date'[Date], \"매출\", SUM(Sales[Amount])), 'Date'[Date], DESC)"
     },
     {
-      "name": "제품별 실적",
-      "description": "제품 카테고리별 매출/수량",
+      "name": "브랜드별 매출·공헌이익",
+      "description": "전일 기준 브랜드별(아가드/베이비스탠다드/모모빈/다이소PB) 매출, 공헌이익, 공헌이익률",
       "workspace_id": "",
       "dataset_id": "YOUR-DATASET-ID",
-      "dax": "EVALUATE SUMMARIZECOLUMNS(Product[Category], \"매출\", SUM(Sales[Amount]), \"수량\", SUM(Sales[Qty]))"
+      "dax": "EVALUATE SUMMARIZECOLUMNS(Product[Brand], \"매출\", SUM(Sales[Amount]), \"공헌이익\", SUM(Sales[ContributionMargin]), \"공헌이익률\", DIVIDE(SUM(Sales[ContributionMargin]), SUM(Sales[Amount])))"
+    },
+    {
+      "name": "채널별 매출",
+      "description": "전일 기준 판매 채널별(자사몰/쿠팡/네이버/다이소/해외 등) 매출과 전주 동요일 매출",
+      "workspace_id": "",
+      "dataset_id": "YOUR-DATASET-ID",
+      "dax": "EVALUATE SUMMARIZECOLUMNS(Sales[Channel], \"매출\", SUM(Sales[Amount]))"
+    },
+    {
+      "name": "SKU 상위·품절 임박",
+      "description": "판매 상위 SKU와 재고 잔여일수 (품절 임박 감지용)",
+      "workspace_id": "",
+      "dataset_id": "YOUR-DATASET-ID",
+      "dax": "EVALUATE TOPN(20, SUMMARIZECOLUMNS(Product[SKU], Product[Brand], \"판매량\", SUM(Sales[Qty]), \"재고\", SUM(Inventory[Qty])), [판매량], DESC)"
     }
   ]
 }

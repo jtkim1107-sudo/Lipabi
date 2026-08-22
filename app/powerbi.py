@@ -63,20 +63,46 @@ def execute_dax(dataset_id: str, dax: str, workspace_id: str = "") -> list[dict]
 
 
 def _mock_rows(query_name: str) -> list[dict]:
-    """데모용 샘플 데이터 (매출 형태)."""
+    """데모용 샘플 데이터 (리파코 브랜드 구조)."""
     rng = random.Random(query_name)
-    if "제품" in query_name or "카테고리" in query_name:
+    if "브랜드" in query_name:
+        rows = []
+        for brand, base, margin in (
+            ("아가드", 4200, 0.34), ("베이비스탠다드", 2600, 0.29),
+            ("모모빈", 1500, 0.31), ("다이소 PB", 3100, 0.18),
+        ):
+            sales = (base + rng.randint(-400, 400)) * 10000
+            rate = round(margin + rng.uniform(-0.04, 0.03), 3)
+            rows.append({
+                "브랜드": brand, "매출": sales,
+                "공헌이익": int(sales * rate), "공헌이익률": rate,
+            })
+        return rows
+    if "채널" in query_name:
         return [
-            {"카테고리": c, "매출": rng.randint(500, 5000) * 10000, "수량": rng.randint(50, 900)}
-            for c in ("전자제품", "가구", "식품", "의류", "잡화")
+            {"채널": ch, "매출": (base + rng.randint(-300, 300)) * 10000}
+            for ch, base in (
+                ("자사몰", 1800), ("쿠팡", 3200), ("네이버", 1400),
+                ("오픈마켓 기타", 700), ("다이소", 3100), ("해외 B2C", 1100),
+            )
+        ]
+    if "SKU" in query_name or "품절" in query_name:
+        skus = [
+            ("AG-CARSEAT-01", "아가드", 210, 3), ("BS-BOTTLE-330", "베이비스탠다드", 480, 12),
+            ("MM-BIN-L", "모모빈", 350, 25), ("DS-WIPES-80", "다이소 PB", 1900, 6),
+            ("AG-STROLLER-X", "아가드", 90, 18), ("BS-PACIFIER-2P", "베이비스탠다드", 620, 4),
+        ]
+        return [
+            {"SKU": s, "브랜드": b, "판매량": q + rng.randint(-30, 30), "재고잔여일": d}
+            for s, b, q, d in skus
         ]
     today = date.today()
     rows = []
-    base = rng.randint(800, 1200)
+    base = rng.randint(9000, 11000)
     for i in range(30, 0, -1):
         d = today - timedelta(days=i)
-        drift = rng.randint(-200, 220) + (80 if d.weekday() >= 5 else 0)
-        rows.append({"날짜": d.isoformat(), "매출": max(100, base + drift) * 10000})
+        drift = rng.randint(-1500, 1600) + (700 if d.weekday() >= 5 else 0)
+        rows.append({"날짜": d.isoformat(), "매출": max(1000, base + drift) * 10000})
     return rows
 
 
