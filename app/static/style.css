@@ -240,6 +240,29 @@ h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
   font-size: 12.5px; padding: 3px 4px; font-family: inherit; background: #fff;
 }
 
+/* ── AI 수행 / 결과물 ── */
+.btn-mini {
+  border: 1px solid var(--border); background: none; color: var(--muted);
+  border-radius: 4px; font-size: 11px; padding: 2px 7px; cursor: pointer;
+  font-family: inherit;
+}
+.btn-mini:hover { border-color: var(--muted); color: var(--text); }
+.btn-mini:disabled { opacity: 0.5; cursor: wait; }
+.btn-mini.has-result { border-color: var(--low); color: var(--low); }
+.suggest-badge {
+  border: 1px dashed var(--border); border-radius: 4px;
+  font-size: 11px; color: var(--muted); padding: 1px 6px; cursor: pointer;
+}
+.suggest-badge:hover { border-color: var(--low); color: var(--low); }
+.modal-wide { width: 720px; }
+.deliverable-summary { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+.deliverable-box {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 16px 18px; font-family: inherit; font-size: 13.5px;
+  line-height: 1.75; white-space: pre-wrap; color: var(--text);
+  max-height: 60vh; overflow-y: auto;
+}
+
 .briefing-tip {
   margin-top: 14px; padding: 10px 14px;
   background: var(--bg); border-radius: 6px;

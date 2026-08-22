@@ -3,9 +3,20 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from . import analyzer, config, database, powerbi
+from . import analyzer, briefer, config, database, powerbi
 
 logger = logging.getLogger(__name__)
+
+ROLE_LABEL = {"admin": "관리자", "leader": "팀장", "member": "직원"}
+
+
+def _build_roster() -> str:
+    lines = []
+    for u in database.list_users():
+        role = ROLE_LABEL.get(u["role"], u["role"])
+        team = f", {u['team']}팀" if u.get("team") else ""
+        lines.append(f"- {u['name']} ({role}{team})")
+    return "\n".join(lines)
 
 
 def run_daily_pipeline() -> dict:
@@ -22,7 +33,7 @@ def run_daily_pipeline() -> dict:
         )
 
     profile = database.get_agent_profile()
-    result = analyzer.analyze(query_results, run_date, profile)
+    result = analyzer.analyze(query_results, run_date, profile, roster=_build_roster())
 
     data_notes = "; ".join(errors)
     report_id = database.create_report(
@@ -42,15 +53,30 @@ def run_daily_pipeline() -> dict:
             status="suggested",
             source="ai",
             report_id=report_id,
+            suggested_assignee=t.suggested_assignee or "",
         )
         created.append(task)
 
-    logger.info("리포트 #%d 저장, 업무 %d건 등록", report_id, len(created))
+    # 아침 자동화: 분석 직후 전 직원 브리핑을 미리 생성해 둔다
+    briefings_created = 0
+    if config.AUTO_BRIEFINGS:
+        for u in database.list_users():
+            try:
+                briefer.get_or_create(u, run_date, refresh=True)
+                briefings_created += 1
+            except Exception:
+                logger.exception("브리핑 자동 생성 실패 (%s)", u["name"])
+
+    logger.info(
+        "리포트 #%d 저장, 업무 %d건 등록, 브리핑 %d건 생성",
+        report_id, len(created), briefings_created,
+    )
     return {
         "report_id": report_id,
         "run_date": run_date,
         "summary": result.summary,
         "insights": result.insights,
         "tasks_created": len(created),
+        "briefings_created": briefings_created,
         "data_errors": errors,
     }

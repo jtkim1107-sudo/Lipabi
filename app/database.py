@@ -90,6 +90,9 @@ def init_db() -> None:
                 status TEXT NOT NULL DEFAULT 'suggested',
                 assignee TEXT NOT NULL DEFAULT '',
                 source TEXT NOT NULL DEFAULT 'manual',
+                suggested_assignee TEXT NOT NULL DEFAULT '',
+                deliverable TEXT NOT NULL DEFAULT '',
+                deliverable_summary TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -110,6 +113,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     if "team" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN team TEXT NOT NULL DEFAULT ''")
+    task_cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)")}
+    for col in ("suggested_assignee", "deliverable", "deliverable_summary"):
+        if col not in task_cols:
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
 
 
 # ── 에이전트 프로필 ─────────────────────────────────────
@@ -421,17 +428,34 @@ def create_task(
     assignee: str = "",
     source: str = "manual",
     report_id: int | None = None,
+    suggested_assignee: str = "",
 ) -> dict:
     now = _now()
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO tasks (report_id, title, description, priority, category,
-                                  status, assignee, source, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (report_id, title, description, priority, category, status, assignee, source, now, now),
+                                  status, assignee, source, suggested_assignee,
+                                  created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (report_id, title, description, priority, category, status, assignee, source,
+             suggested_assignee, now, now),
         )
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (cur.lastrowid,)).fetchone()
         return dict(row)
+
+
+def set_task_deliverable(task_id: int, deliverable: str, summary: str) -> dict | None:
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE tasks SET deliverable = ?, deliverable_summary = ?,
+                                status = CASE WHEN status IN ('suggested','todo')
+                                              THEN 'in_progress' ELSE status END,
+                                updated_at = ?
+               WHERE id = ?""",
+            (deliverable, summary, _now(), task_id),
+        )
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        return dict(row) if row else None
 
 
 def list_tasks() -> list[dict]:

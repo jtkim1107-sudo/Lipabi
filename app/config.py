@@ -21,6 +21,11 @@ POWERBI_MOCK = os.getenv("POWERBI_MOCK", "false").lower() in ("1", "true", "yes"
 DAILY_RUN_TIME = os.getenv("DAILY_RUN_TIME", "07:00")
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Seoul")
 
+# 아침 분석 직후 전 직원 브리핑 자동 생성
+AUTO_BRIEFINGS = os.getenv("AUTO_BRIEFINGS", "true").lower() in ("1", "true", "yes")
+# 주간 자동 학습 (요일 시:분, 예: "mon 06:30"). 비우면 비활성화
+WEEKLY_TRAIN = os.getenv("WEEKLY_TRAIN", "mon 06:30")
+
 RUN_TOKEN = os.getenv("RUN_TOKEN", "")
 
 # ── 로그인/보안 ──────────────────────────────────────────

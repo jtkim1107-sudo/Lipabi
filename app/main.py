@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from datetime import datetime as dt
 from zoneinfo import ZoneInfo
 
-from . import auth, briefer, coach, config, database, pipeline
+from . import auth, briefer, coach, config, database, pipeline, worker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -35,6 +35,20 @@ def _scheduled_run():
         logger.info("자동 분석 완료: %s", result["summary"][:100])
     except Exception:
         logger.exception("자동 분석 실패")
+
+
+def _scheduled_weekly_train():
+    """주간 자동 학습: 전사 분석가 + 모든 개인 에이전트."""
+    try:
+        result = coach.train()
+        logger.info("전사 분석가 주간 학습: %s", result.get("changelog", result.get("message")))
+    except Exception:
+        logger.exception("전사 분석가 주간 학습 실패")
+    for u in database.list_users():
+        try:
+            coach.train_personal(u)
+        except Exception:
+            logger.exception("개인 에이전트 주간 학습 실패 (%s)", u["name"])
 
 
 def _ensure_admin():
@@ -70,6 +84,19 @@ async def lifespan(app: FastAPI):
         id="daily_analysis",
         replace_existing=True,
     )
+    if config.WEEKLY_TRAIN.strip():
+        try:
+            day, hhmm = config.WEEKLY_TRAIN.strip().split()
+            t_hour, t_minute = hhmm.split(":")
+            scheduler.add_job(
+                _scheduled_weekly_train,
+                CronTrigger(day_of_week=day, hour=int(t_hour), minute=int(t_minute)),
+                id="weekly_train",
+                replace_existing=True,
+            )
+            logger.info("매주 %s 자동 학습 예약됨", config.WEEKLY_TRAIN)
+        except ValueError:
+            logger.error("WEEKLY_TRAIN 형식 오류 (예: 'mon 06:30'): %r", config.WEEKLY_TRAIN)
     scheduler.start()
     logger.info("매일 %s (%s) 자동 분석 예약됨", config.DAILY_RUN_TIME, config.TIMEZONE)
     yield
@@ -438,6 +465,22 @@ def api_delete_task(task_id: int, user: dict = Depends(require_user), reason: st
             user_id=user["id"],
         )
     return {"ok": True}
+
+
+@app.post("/api/tasks/{task_id}/delegate")
+def api_delegate_task(task_id: int, user: dict = Depends(require_user)):
+    """AI가 이 업무를 직접 수행해 결과물을 카드에 첨부한다."""
+    task = database.get_task(task_id)
+    if task is None:
+        raise HTTPException(404, "업무를 찾을 수 없습니다")
+    if task["status"] == "done":
+        raise HTTPException(400, "이미 완료된 업무입니다")
+    try:
+        product = worker.do_task(task, user["name"])
+    except Exception as e:
+        logger.exception("AI 업무 수행 실패")
+        raise HTTPException(500, f"AI 업무 수행 실패: {e}")
+    return database.set_task_deliverable(task_id, product.deliverable, product.summary)
 
 
 @app.get("/api/reports/latest")

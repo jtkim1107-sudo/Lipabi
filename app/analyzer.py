@@ -1,7 +1,7 @@
 """Claude API로 Power BI 데이터를 분석해 요약·인사이트·업무 제안을 생성한다."""
 import json
 import logging
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 import anthropic
 from pydantic import BaseModel, Field
@@ -16,6 +16,10 @@ class SuggestedTask(BaseModel):
     description: str = Field(description="무엇을, 왜, 어떻게 해야 하는지 구체적 설명")
     priority: Literal["high", "medium", "low"]
     category: str = Field(description="업무 분류 (예: 영업, 재고, 마케팅, 데이터 점검)")
+    suggested_assignee: Optional[str] = Field(
+        default=None,
+        description="팀 구성원 명단에서 이 업무에 가장 적합한 사람 이름 (명단이 없거나 판단이 어려우면 null)",
+    )
 
 
 class AnalysisResult(BaseModel):
@@ -58,7 +62,8 @@ def build_system_prompt(profile: dict | None) -> str:
     return "\n\n".join(parts)
 
 
-def analyze(query_results: list[dict], run_date: str, profile: dict | None = None) -> AnalysisResult:
+def analyze(query_results: list[dict], run_date: str, profile: dict | None = None,
+            roster: str = "") -> AnalysisResult:
     """수집된 데이터를 Claude에 보내 구조화된 분석 결과를 받는다."""
     sections = []
     for r in query_results:
@@ -66,10 +71,19 @@ def analyze(query_results: list[dict], run_date: str, profile: dict | None = Non
         sections.append(
             f"### {r['name']}\n{r['description']}\n```json\n{rows_json}\n```"
         )
+    roster_section = ""
+    if roster.strip():
+        roster_section = (
+            "\n\n## 팀 구성원\n"
+            + roster.strip()
+            + "\n\n업무마다 이 명단에서 가장 적합한 담당자를 suggested_assignee로 추천하세요. "
+            "역할과 팀이 맞는 사람이 없으면 null로 두세요."
+        )
     user_message = (
         f"오늘 날짜: {run_date}\n\n"
         f"아래는 오늘 아침 Power BI에서 수집한 데이터입니다.\n\n"
         + "\n\n".join(sections)
+        + roster_section
         + "\n\n이 데이터를 분석해 요약, 인사이트, 그리고 오늘 팀이 실행할 업무 목록을 만들어 주세요."
     )
 

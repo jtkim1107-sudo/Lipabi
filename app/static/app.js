@@ -107,6 +107,52 @@ function renderCard(task) {
     meta.appendChild(ai);
   }
 
+  // AI가 추천한 담당자 — 클릭 한 번으로 배정
+  if (task.suggested_assignee && !task.assignee && task.status === "suggested") {
+    const suggest = document.createElement("span");
+    suggest.className = "suggest-badge";
+    suggest.textContent = `추천: ${task.suggested_assignee}`;
+    suggest.title = "클릭하면 이 담당자로 배정합니다";
+    suggest.onclick = async () => {
+      await api(`/api/tasks/${task.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ assignee: task.suggested_assignee }),
+      });
+      toast(`${task.suggested_assignee}님에게 배정했습니다`);
+      await loadTasks();
+    };
+    meta.appendChild(suggest);
+  }
+
+  // AI에게 업무 맡기기 / 결과물 보기
+  if (task.deliverable) {
+    const resultBtn = document.createElement("button");
+    resultBtn.className = "btn-mini has-result";
+    resultBtn.textContent = "📄 결과 보기";
+    resultBtn.onclick = () => openDeliverable(task);
+    meta.appendChild(resultBtn);
+  } else if (task.status !== "done") {
+    const aiBtn = document.createElement("button");
+    aiBtn.className = "btn-mini";
+    aiBtn.textContent = "🤖 AI 수행";
+    aiBtn.title = "AI가 이 업무의 결과물 초안을 작성합니다";
+    aiBtn.onclick = async () => {
+      if (!confirm(`AI가 "${task.title}" 업무를 수행해 결과물 초안을 만듭니다. 진행할까요?`)) return;
+      aiBtn.disabled = true;
+      aiBtn.textContent = "작업 중…";
+      try {
+        await api(`/api/tasks/${task.id}/delegate`, { method: "POST" });
+        toast("AI가 결과물을 작성했습니다 — 카드의 [결과 보기]에서 확인하세요");
+        await loadTasks();
+      } catch (err) {
+        toast(err.message);
+        aiBtn.disabled = false;
+        aiBtn.textContent = "🤖 AI 수행";
+      }
+    };
+    meta.appendChild(aiBtn);
+  }
+
   const assignee = document.createElement("input");
   assignee.className = "assignee-input";
   assignee.placeholder = "담당자";
@@ -173,6 +219,48 @@ function setupDragAndDrop() {
       }
     });
   }
+}
+
+/* ── AI 결과물 모달 ──────────────────────────── */
+
+let deliverableTaskId = null;
+
+function openDeliverable(task) {
+  deliverableTaskId = task.id;
+  document.getElementById("deliverable-title").textContent = task.title;
+  document.getElementById("deliverable-summary").textContent = task.deliverable_summary || "";
+  document.getElementById("deliverable-content").textContent = task.deliverable;
+  document.getElementById("deliverable-modal").classList.remove("hidden");
+}
+
+function setupDeliverableModal() {
+  const modal = document.getElementById("deliverable-modal");
+  document.getElementById("close-deliverable-modal").onclick = () => modal.classList.add("hidden");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+
+  document.getElementById("copy-deliverable-btn").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        document.getElementById("deliverable-content").textContent
+      );
+      toast("클립보드에 복사했습니다");
+    } catch {
+      toast("복사에 실패했습니다 — 직접 선택해서 복사해 주세요");
+    }
+  };
+
+  document.getElementById("complete-deliverable-btn").onclick = async () => {
+    if (!deliverableTaskId) return;
+    await api(`/api/tasks/${deliverableTaskId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "done" }),
+    });
+    modal.classList.add("hidden");
+    toast("완료로 이동했습니다");
+    await loadTasks();
+  };
 }
 
 /* ── 사용자 / 직원 관리 ─────────────────────── */
@@ -590,6 +678,7 @@ function setupActions() {
   setupAgentModal();
   setupMyAgentModal();
   setupBriefing();
+  setupDeliverableModal();
   setupReportFeedback();
   await Promise.all([loadMe(), loadReport(), loadTasks()]);
   // 다른 직원의 변경 사항을 주기적으로 반영
