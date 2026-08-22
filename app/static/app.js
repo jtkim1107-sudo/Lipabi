@@ -1,7 +1,5 @@
 /* Lipabi 칸반보드 프런트엔드 */
 
-const PRIORITY_LABEL = { high: "높음", medium: "보통", low: "낮음" };
-
 let tasks = [];
 
 async function api(path, options = {}) {
@@ -51,7 +49,7 @@ async function loadReport() {
 
 function renderCard(task) {
   const card = document.createElement("div");
-  card.className = "card";
+  card.className = `card pri-${task.priority}`;
   card.draggable = true;
   card.dataset.id = task.id;
 
@@ -82,21 +80,16 @@ function renderCard(task) {
   const meta = document.createElement("div");
   meta.className = "card-meta";
 
-  const pri = document.createElement("span");
-  pri.className = `badge ${task.priority}`;
-  pri.textContent = PRIORITY_LABEL[task.priority] || task.priority;
-  meta.appendChild(pri);
-
   if (task.category) {
     const cat = document.createElement("span");
-    cat.className = "badge category";
+    cat.className = "meta-tag";
     cat.textContent = task.category;
     meta.appendChild(cat);
   }
 
   if (task.source === "ai") {
     const ai = document.createElement("span");
-    ai.className = "badge ai";
+    ai.className = "meta-tag ai";
     ai.textContent = "AI";
     meta.appendChild(ai);
   }
