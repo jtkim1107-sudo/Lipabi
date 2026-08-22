@@ -1,7 +1,7 @@
 """SQLite 저장소: 분석 리포트와 칸반 업무."""
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import config
@@ -40,6 +40,8 @@ def init_db() -> None:
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'member',
                 team TEXT NOT NULL DEFAULT '',
+                email TEXT NOT NULL DEFAULT '',
+                last_login_at TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS sessions (
@@ -156,6 +158,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     if "team" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN team TEXT NOT NULL DEFAULT ''")
+    if "email" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
+    if "last_login_at" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT NOT NULL DEFAULT ''")
     task_cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)")}
     for col in ("suggested_assignee", "deliverable", "deliverable_summary"):
         if col not in task_cols:
@@ -328,23 +334,30 @@ def mark_personal_consumed(ids: list[int]) -> None:
 VALID_ROLES = ("admin", "leader", "member")
 
 
+USER_COLS = "id, username, name, role, team, email, last_login_at, created_at"
+
+
 def create_user(username: str, name: str, password_hash: str, role: str = "member",
-                team: str = "") -> dict:
+                team: str = "", email: str = "") -> dict:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO users (username, name, password_hash, role, team, created_at) "
-            "VALUES (?,?,?,?,?,?)",
-            (username, name, password_hash, role, team, _now()),
+            "INSERT INTO users (username, name, password_hash, role, team, email, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (username, name, password_hash, role, team, email, _now()),
         )
         row = conn.execute(
-            "SELECT id, username, name, role, team, created_at FROM users WHERE id = ?",
-            (cur.lastrowid,),
+            f"SELECT {USER_COLS} FROM users WHERE id = ?", (cur.lastrowid,)
         ).fetchone()
         return dict(row)
 
 
+def set_last_login(user_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (_now(), user_id))
+
+
 def update_user(user_id: int, fields: dict) -> dict | None:
-    allowed = {"name", "role", "team"}
+    allowed = {"name", "role", "team", "email"}
     updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if not updates:
         return get_user(user_id)
@@ -371,9 +384,7 @@ def get_user_by_username(username: str) -> dict | None:
 
 def list_users() -> list[dict]:
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT id, username, name, role, team, created_at FROM users ORDER BY id"
-        ).fetchall()
+        rows = conn.execute(f"SELECT {USER_COLS} FROM users ORDER BY id").fetchall()
         return [dict(r) for r in rows]
 
 
@@ -390,10 +401,34 @@ def count_admins() -> int:
 def get_user(user_id: int) -> dict | None:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, username, name, role, team, created_at FROM users WHERE id = ?",
-            (user_id,),
+            f"SELECT {USER_COLS} FROM users WHERE id = ?", (user_id,)
         ).fetchone()
         return dict(row) if row else None
+
+
+def engagement_stats(days: int = 7) -> list[dict]:
+    """직원별 참여 지표: 최근 활동/메모 수, 담당 업무, 마지막 로그인·활동."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    users = list_users()
+    with get_conn() as conn:
+        for u in users:
+            u["recent_activities"] = conn.execute(
+                "SELECT COUNT(*) FROM activities WHERE user_name = ? AND created_at >= ?",
+                (u["name"], cutoff),
+            ).fetchone()[0]
+            u["recent_comments"] = conn.execute(
+                "SELECT COUNT(*) FROM task_comments WHERE user_name = ? AND created_at >= ?",
+                (u["name"], cutoff),
+            ).fetchone()[0]
+            u["open_tasks"] = conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE assignee = ? AND status IN ('todo','in_progress')",
+                (u["name"],),
+            ).fetchone()[0]
+            u["last_activity_at"] = conn.execute(
+                "SELECT MAX(created_at) FROM activities WHERE user_name = ?",
+                (u["name"],),
+            ).fetchone()[0] or ""
+    return users
 
 
 def delete_user(user_id: int) -> bool:

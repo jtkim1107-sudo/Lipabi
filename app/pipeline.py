@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import json
 
-from . import analyzer, briefer, config, database, powerbi, reviewer
+from . import analyzer, briefer, config, database, mailer, powerbi, reviewer
 
 logger = logging.getLogger(__name__)
 
@@ -132,13 +132,16 @@ def run_daily_pipeline() -> dict:
             data_request_to_task(row, priority="high")
             blocking_tasks += 1
 
-    # 아침 자동화: 분석 직후 전 직원 브리핑을 미리 생성해 둔다
+    # 아침 자동화: 분석 직후 전 직원 브리핑을 미리 생성하고 이메일로도 배달
     briefings_created = 0
+    emails_sent = 0
     if config.AUTO_BRIEFINGS:
         for u in database.list_users():
             try:
-                briefer.get_or_create(u, run_date, refresh=True)
+                briefing = briefer.get_or_create(u, run_date, refresh=True)
                 briefings_created += 1
+                if mailer.send_briefing(u, briefing):
+                    emails_sent += 1
             except Exception:
                 logger.exception("브리핑 자동 생성 실패 (%s)", u["name"])
 
@@ -153,6 +156,7 @@ def run_daily_pipeline() -> dict:
         "insights": result.insights,
         "tasks_created": len(created),
         "briefings_created": briefings_created,
+        "briefing_emails_sent": emails_sent,
         "data_requests_created": requests_created,
         "blocking_tasks_created": blocking_tasks,
         "self_review": review_stats,

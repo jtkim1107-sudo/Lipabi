@@ -615,8 +615,55 @@ async function loadMe() {
   if (me.role === "admin") {
     document.getElementById("manage-users-btn").classList.remove("hidden");
     document.getElementById("agent-btn").classList.remove("hidden");
+    document.getElementById("engagement-btn").classList.remove("hidden");
   }
   return me;
+}
+
+/* ── 참여 현황 (관리자) ──────────────────────── */
+
+function formatWhen(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const when = d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return days >= 1 ? `${when} (${days}일 전)` : when;
+}
+
+function setupEngagement() {
+  const modal = document.getElementById("engagement-modal");
+  document.getElementById("close-engagement-modal").onclick = () => modal.classList.add("hidden");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+
+  document.getElementById("engagement-btn").onclick = async () => {
+    const stats = await api("/api/engagement");
+    const tbody = document.getElementById("engagement-tbody");
+    tbody.innerHTML = "";
+    for (const u of stats) {
+      const tr = document.createElement("tr");
+      const staleLogin =
+        !u.last_login_at || Date.now() - new Date(u.last_login_at).getTime() > 3 * 86400000;
+      const cells = [
+        u.name,
+        u.team || "—",
+        formatWhen(u.last_login_at),
+        formatWhen(u.last_activity_at),
+        `${u.recent_activities}건`,
+        `${u.recent_comments}건`,
+        `${u.open_tasks}건`,
+      ];
+      cells.forEach((text, i) => {
+        const td = document.createElement("td");
+        td.textContent = text;
+        if (i === 2 && staleLogin) td.className = "stale-login";
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    }
+    modal.classList.remove("hidden");
+  };
 }
 
 /* ── 내 분석가 (교육) ────────────────────────── */
@@ -873,6 +920,24 @@ async function refreshUsersTable() {
     };
     tdTeam.appendChild(teamInput);
 
+    const tdEmail = document.createElement("td");
+    const emailInput = document.createElement("input");
+    emailInput.className = "inline-input inline-email";
+    emailInput.placeholder = "이메일";
+    emailInput.value = u.email || "";
+    emailInput.onchange = async () => {
+      try {
+        await api(`/api/users/${u.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ email: emailInput.value.trim() }),
+        });
+        toast("이메일을 저장했습니다");
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+    tdEmail.appendChild(emailInput);
+
     const tdRole = document.createElement("td");
     const roleSelect = document.createElement("select");
     roleSelect.className = "inline-select";
@@ -929,7 +994,7 @@ async function refreshUsersTable() {
     };
     tdActions.append(resetBtn, delBtn);
 
-    tr.append(tdUsername, tdName, tdTeam, tdRole, tdActions);
+    tr.append(tdUsername, tdName, tdTeam, tdEmail, tdRole, tdActions);
     tbody.appendChild(tr);
   }
 }
@@ -959,6 +1024,7 @@ function setupUserActions() {
           username: document.getElementById("new-username").value.trim(),
           name: document.getElementById("new-name").value.trim(),
           team: document.getElementById("new-team").value.trim(),
+          email: document.getElementById("new-email").value.trim(),
           password: document.getElementById("new-password").value,
           role: document.getElementById("new-role").value,
         }),
@@ -1025,6 +1091,7 @@ function setupActions() {
   setupDeliverableModal();
   setupCommentsModal();
   setupWorkReport();
+  setupEngagement();
   setupReportFeedback();
   await Promise.all([loadMe(), loadReport(), loadTasks(), loadSelfReview()]);
   await loadDataRequests(); // currentUser 로드 후 (관리자 버튼 표시 여부)

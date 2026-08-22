@@ -57,6 +57,10 @@ h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 #report-insights li { margin: 3px 0; line-height: 1.6; color: #444; }
 .report-notes { color: var(--high); font-size: 12px; }
 
+/* ── 참여 현황 ── */
+.stale-login { color: var(--high); font-weight: 600; }
+.engagement-note { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.6; }
+
 /* ── 진행 메모 / 막힘 ── */
 .blocked-badge {
   font-size: 10.5px; color: var(--high); border: 1px solid var(--high);

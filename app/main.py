@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from datetime import datetime as dt
 from zoneinfo import ZoneInfo
 
-from . import auth, briefer, coach, config, database, pipeline, reporter, worker
+from . import auth, briefer, coach, config, database, mailer, pipeline, reporter, worker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -41,6 +41,13 @@ def _scheduled_work_report():
     try:
         result = reporter.run_and_save(_today())
         logger.info("저녁 업무 보고: %s", result.get("summary", result.get("message")))
+        if result.get("generated"):
+            recipients = [
+                u for u in database.list_users() if u["role"] in ("admin", "leader")
+            ]
+            sent = mailer.send_work_report(recipients, result)
+            if sent:
+                logger.info("업무 보고 메일 %d건 발송", sent)
     except Exception:
         logger.exception("저녁 업무 보고 생성 실패")
 
@@ -161,6 +168,7 @@ def api_login(body: LoginBody, request: Request, response: Response):
         raise HTTPException(401, "아이디 또는 비밀번호가 올바르지 않습니다")
 
     auth.clear_failures(key)
+    database.set_last_login(user["id"])
     token = auth.new_session_token()
     expires_at = (
         datetime.now(timezone.utc) + timedelta(days=config.SESSION_DAYS)
@@ -215,12 +223,14 @@ class UserCreateBody(BaseModel):
     password: str
     role: str = "member"
     team: str = ""
+    email: str = ""
 
 
 class UserPatchBody(BaseModel):
     name: str | None = None
     role: str | None = None
     team: str | None = None
+    email: str | None = None
 
 
 @app.get("/api/users")
@@ -245,6 +255,7 @@ def api_create_user(body: UserCreateBody, _: dict = Depends(require_admin)):
         password_hash=auth.hash_password(body.password),
         role=body.role,
         team=body.team.strip(),
+        email=body.email.strip(),
     )
 
 
@@ -259,9 +270,16 @@ def api_patch_user(user_id: int, body: UserPatchBody, _: dict = Depends(require_
         if target["role"] == "admin" and body.role != "admin" and database.count_admins() <= 1:
             raise HTTPException(400, "마지막 관리자의 역할은 변경할 수 없습니다")
     fields = body.model_dump(exclude_unset=True)
-    if "team" in fields and fields["team"] is not None:
-        fields["team"] = fields["team"].strip()
+    for key in ("team", "email"):
+        if key in fields and fields[key] is not None:
+            fields[key] = fields[key].strip()
     return database.update_user(user_id, fields)
+
+
+@app.get("/api/engagement")
+def api_engagement(_: dict = Depends(require_admin)):
+    """직원별 참여 현황 (최근 7일)."""
+    return database.engagement_stats(days=7)
 
 
 @app.delete("/api/users/{user_id}")

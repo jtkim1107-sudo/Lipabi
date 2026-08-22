@@ -19,6 +19,7 @@
       <button id="briefing-btn" class="btn-ghost">오늘 브리핑</button>
       <button id="my-agent-btn" class="btn-ghost">내 에이전트</button>
       <button id="agent-btn" class="btn-ghost hidden">내 분석가</button>
+      <button id="engagement-btn" class="btn-ghost hidden">참여 현황</button>
       <button id="manage-users-btn" class="btn-ghost hidden">직원 관리</button>
       <button id="logout-btn" class="btn-ghost">로그아웃</button>
     </div>
@@ -79,19 +80,20 @@
   </main>
 
   <div id="users-modal" class="modal-backdrop hidden">
-    <div class="modal">
+    <div class="modal modal-wide">
       <div class="modal-header">
         <h2>직원 관리</h2>
         <button id="close-users-modal" class="btn-ghost">닫기</button>
       </div>
       <table class="users-table">
-        <thead><tr><th>아이디</th><th>이름</th><th>팀</th><th>역할</th><th></th></tr></thead>
+        <thead><tr><th>아이디</th><th>이름</th><th>팀</th><th>이메일</th><th>역할</th><th></th></tr></thead>
         <tbody id="users-tbody"></tbody>
       </table>
       <form id="add-user-form" class="add-user-form">
         <input type="text" id="new-username" placeholder="아이디" required>
         <input type="text" id="new-name" placeholder="이름" required>
         <input type="text" id="new-team" placeholder="팀 (예: 마케팅)">
+        <input type="email" id="new-email" placeholder="이메일 (브리핑 발송용)">
         <input type="password" id="new-password" placeholder="비밀번호 (8자 이상)" minlength="8" required>
         <select id="new-role">
           <option value="member">직원</option>
@@ -100,6 +102,23 @@
         </select>
         <button type="submit" class="btn-primary">추가</button>
       </form>
+    </div>
+  </div>
+
+  <div id="engagement-modal" class="modal-backdrop hidden">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2>참여 현황 <span class="wr-date">최근 7일</span></h2>
+        <button id="close-engagement-modal" class="btn-ghost">닫기</button>
+      </div>
+      <table class="users-table">
+        <thead><tr>
+          <th>이름</th><th>팀</th><th>마지막 로그인</th><th>마지막 활동</th>
+          <th>활동</th><th>메모</th><th>담당 업무</th>
+        </tr></thead>
+        <tbody id="engagement-tbody"></tbody>
+      </table>
+      <p class="engagement-note">3일 이상 로그인이 없으면 빨간색으로 표시됩니다. 참여가 낮은 팀에는 직접 물어봐 주세요 — 도구 탓일 수도, 업무 방식 탓일 수도 있습니다.</p>
     </div>
   </div>
 

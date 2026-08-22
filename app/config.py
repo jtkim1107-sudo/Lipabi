@@ -30,6 +30,16 @@ SELF_REVIEW = os.getenv("SELF_REVIEW", "true").lower() in ("1", "true", "yes")
 # 저녁 업무 보고 자동 생성 시각 (HH:MM). 비우면 비활성화
 DAILY_REPORT_TIME = os.getenv("DAILY_REPORT_TIME", "18:00")
 
+# ── 이메일 발송 (SMTP 설정이 있으면 브리핑/보고를 메일로도 배달) ──
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
+SMTP_TLS = os.getenv("SMTP_TLS", "true").lower() in ("1", "true", "yes")
+# 메일 속 '칸반보드 열기' 링크 주소
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+
 RUN_TOKEN = os.getenv("RUN_TOKEN", "")
 
 # ── 로그인/보안 ──────────────────────────────────────────
