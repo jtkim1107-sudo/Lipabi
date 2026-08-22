@@ -33,6 +33,20 @@ def init_db() -> None:
                 data_notes TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'member',
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 report_id INTEGER REFERENCES reports(id) ON DELETE SET NULL,
@@ -48,6 +62,94 @@ def init_db() -> None:
             );
             """
         )
+
+
+# ── 사용자 ──────────────────────────────────────────────
+
+def create_user(username: str, name: str, password_hash: str, role: str = "member") -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO users (username, name, password_hash, role, created_at) VALUES (?,?,?,?,?)",
+            (username, name, password_hash, role, _now()),
+        )
+        row = conn.execute(
+            "SELECT id, username, name, role, created_at FROM users WHERE id = ?",
+            (cur.lastrowid,),
+        ).fetchone()
+        return dict(row)
+
+
+def get_user_by_username(username: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_users() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, username, name, role, created_at FROM users ORDER BY id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def count_users() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def count_admins() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()[0]
+
+
+def get_user(user_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, username, name, role, created_at FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def delete_user(user_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        return cur.rowcount > 0
+
+
+def set_user_password(user_id: int, password_hash: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+        # 비밀번호 변경 시 기존 세션 전부 무효화
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+
+# ── 세션 ────────────────────────────────────────────────
+
+def create_session(token: str, user_id: int, expires_at: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?,?,?,?)",
+            (token, user_id, expires_at, _now()),
+        )
+
+
+def get_session_user(token: str) -> dict | None:
+    """유효한 세션이면 사용자 정보를 반환하고, 만료된 세션은 정리한다."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE expires_at < ?", (_now(),))
+        row = conn.execute(
+            """SELECT u.id, u.username, u.name, u.role
+               FROM sessions s JOIN users u ON u.id = s.user_id
+               WHERE s.token = ? AND s.expires_at >= ?""",
+            (token, _now()),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def delete_session(token: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
 
 
 # ── 리포트 ──────────────────────────────────────────────

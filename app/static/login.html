@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>로그인 — Lipabi</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <h1>Lipabi</h1>
+    <p class="subtitle">Power BI · AI 아침 분석 · 팀 칸반보드</p>
+    <form id="login-form">
+      <input type="text" id="username" placeholder="아이디" autocomplete="username" required autofocus>
+      <input type="password" id="password" placeholder="비밀번호" autocomplete="current-password" required>
+      <p id="login-error" class="login-error hidden"></p>
+      <button type="submit" class="btn-primary btn-full">로그인</button>
+    </form>
+  </div>
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById("login-error");
+      errorEl.classList.add("hidden");
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: document.getElementById("username").value.trim(),
+          password: document.getElementById("password").value,
+        }),
+      });
+      if (res.ok) {
+        window.location.href = "/";
+      } else {
+        const body = await res.json().catch(() => ({}));
+        errorEl.textContent = body.detail || "로그인에 실패했습니다";
+        errorEl.classList.remove("hidden");
+      }
+    });
+  </script>
+</body>
+</html>

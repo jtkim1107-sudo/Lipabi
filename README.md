@@ -83,9 +83,44 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ---
 
-## 4. 팀에서 함께 쓰기
+## 4. 로그인과 보안
+
+모든 화면과 API는 **로그인해야만** 사용할 수 있습니다.
+
+### 최초 관리자 계정
+
+서버를 처음 실행하면 관리자 계정이 자동 생성됩니다.
+
+- `.env`에 `ADMIN_PASSWORD`를 설정했으면 그 비밀번호로 생성
+- 설정하지 않았으면 **임시 비밀번호가 무작위 생성되어 서버 로그에 출력**됩니다
+  (`관리자 계정이 생성되었습니다 → 아이디: admin / 임시 비밀번호: ...`)
+
+### 직원 계정 관리
+
+관리자로 로그인하면 우상단 **[직원 관리]**에서:
+- 직원 계정 추가 (아이디/이름/비밀번호/역할)
+- 비밀번호 재설정, 계정 삭제 (자기 자신과 마지막 관리자는 삭제 불가)
+
+### 적용된 보안 장치
+
+| 항목 | 내용 |
+|------|------|
+| 비밀번호 저장 | PBKDF2-SHA256 600,000회 해시 + 솔트 (평문 저장 안 함) |
+| 세션 | 서버 저장 무작위 토큰, HttpOnly + SameSite=Lax 쿠키, 기본 14일 만료 |
+| 로그인 시도 제한 | IP+아이디 기준 15분 내 5회 실패 시 잠금 |
+| 비밀번호 변경 | 변경/재설정 시 해당 사용자의 기존 세션 전부 무효화 |
+| 자동화 API | `/api/run`은 로그인 세션 또는 `X-Run-Token` 헤더로만 호출 가능 |
+| HTTPS | 리버스 프록시(nginx, Caddy 등) 뒤에서 `COOKIE_SECURE=true` 설정 권장 |
+
+> 참고: 인터넷에 공개할 경우 반드시 HTTPS를 적용하세요. 사내망 전용이라면
+> 기본 설정으로도 충분합니다.
+
+---
+
+## 5. 팀에서 함께 쓰기
 
 - 서버를 사내망(또는 클라우드)에 띄우고 직원들에게 주소를 공유하면 됩니다.
+- 관리자가 직원 계정을 만들어 주면 각자 로그인해서 사용합니다.
 - 보드는 15초마다 자동 새로고침되어 서로의 변경 사항이 반영됩니다.
 - 카드 사용법:
   - **AI 제안** 열에 매일 아침 분석 결과 업무가 올라옵니다
@@ -95,7 +130,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ---
 
-## 5. 구조
+## 6. 구조
 
 ```
 Lipabi/
@@ -104,9 +139,10 @@ Lipabi/
 │   ├── pipeline.py    # 수집 → 분석 → 업무 등록 파이프라인
 │   ├── powerbi.py     # Power BI REST API (MSAL 인증, DAX 실행)
 │   ├── analyzer.py    # Claude AI 분석 (구조화된 JSON 출력)
-│   ├── database.py    # SQLite 저장소 (리포트, 업무)
+│   ├── database.py    # SQLite 저장소 (사용자, 세션, 리포트, 업무)
+│   ├── auth.py        # 비밀번호 해시, 세션 토큰, 로그인 시도 제한
 │   ├── config.py      # 환경 변수 설정
-│   └── static/        # 칸반보드 웹 UI
+│   └── static/        # 칸반보드 웹 UI (index.html, login.html)
 ├── config/queries.json  # 매일 불러올 DAX 쿼리 정의
 ├── run_daily.py         # cron/수동 실행용 스크립트
 └── .github/workflows/daily-analysis.yml  # (선택) GitHub Actions 스케줄
@@ -116,6 +152,13 @@ Lipabi/
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
+| POST | `/api/login` | 로그인 (세션 쿠키 발급) |
+| POST | `/api/logout` | 로그아웃 |
+| GET | `/api/me` | 내 정보 |
+| POST | `/api/me/password` | 내 비밀번호 변경 |
+| GET/POST | `/api/users` | 직원 목록/추가 (관리자) |
+| DELETE | `/api/users/{id}` | 직원 삭제 (관리자) |
+| POST | `/api/users/{id}/password` | 비밀번호 재설정 (관리자) |
 | GET | `/api/tasks` | 업무 목록 |
 | POST | `/api/tasks` | 업무 생성 |
 | PATCH | `/api/tasks/{id}` | 상태/담당자 등 수정 |

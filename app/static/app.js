@@ -7,6 +7,11 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
+  if (res.status === 401) {
+    // 세션 만료 → 로그인 페이지로
+    window.location.href = "/login";
+    throw new Error("로그인이 필요합니다");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `요청 실패 (${res.status})`);
@@ -162,28 +167,109 @@ function setupDragAndDrop() {
   }
 }
 
+/* ── 사용자 / 직원 관리 ─────────────────────── */
+
+async function loadMe() {
+  const me = await api("/api/me");
+  document.getElementById("user-name").textContent = `${me.name}님`;
+  if (me.role === "admin") {
+    document.getElementById("manage-users-btn").classList.remove("hidden");
+  }
+  return me;
+}
+
+async function refreshUsersTable() {
+  const users = await api("/api/users");
+  const tbody = document.getElementById("users-tbody");
+  tbody.innerHTML = "";
+  for (const u of users) {
+    const tr = document.createElement("tr");
+
+    const tdUsername = document.createElement("td");
+    tdUsername.textContent = u.username;
+    const tdName = document.createElement("td");
+    tdName.textContent = u.name;
+    const tdRole = document.createElement("td");
+    tdRole.textContent = u.role === "admin" ? "관리자" : "직원";
+
+    const tdActions = document.createElement("td");
+    tdActions.className = "row-actions";
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "btn-ghost";
+    resetBtn.textContent = "비밀번호 재설정";
+    resetBtn.onclick = async () => {
+      const pw = prompt(`${u.name}의 새 비밀번호 (8자 이상):`);
+      if (!pw) return;
+      try {
+        await api(`/api/users/${u.id}/password`, {
+          method: "POST",
+          body: JSON.stringify({ new_password: pw }),
+        });
+        toast("비밀번호를 재설정했습니다");
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+    const delBtn = document.createElement("button");
+    delBtn.className = "btn-ghost";
+    delBtn.textContent = "삭제";
+    delBtn.onclick = async () => {
+      if (!confirm(`${u.name}(${u.username}) 계정을 삭제할까요?`)) return;
+      try {
+        await api(`/api/users/${u.id}`, { method: "DELETE" });
+        await refreshUsersTable();
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+    tdActions.append(resetBtn, delBtn);
+
+    tr.append(tdUsername, tdName, tdRole, tdActions);
+    tbody.appendChild(tr);
+  }
+}
+
+function setupUserActions() {
+  document.getElementById("logout-btn").onclick = async () => {
+    await api("/api/logout", { method: "POST" });
+    window.location.href = "/login";
+  };
+
+  const modal = document.getElementById("users-modal");
+  document.getElementById("manage-users-btn").onclick = async () => {
+    await refreshUsersTable();
+    modal.classList.remove("hidden");
+  };
+  document.getElementById("close-users-modal").onclick = () => modal.classList.add("hidden");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+
+  document.getElementById("add-user-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/users", {
+        method: "POST",
+        body: JSON.stringify({
+          username: document.getElementById("new-username").value.trim(),
+          name: document.getElementById("new-name").value.trim(),
+          password: document.getElementById("new-password").value,
+          role: document.getElementById("new-role").value,
+        }),
+      });
+      e.target.reset();
+      await refreshUsersTable();
+      toast("직원 계정을 추가했습니다");
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+}
+
 /* ── 수동 업무 추가 / 분석 실행 ──────────────── */
 
-// RUN_TOKEN이 설정된 서버에서는 최초 1회 토큰을 물어보고 저장한다.
-async function runAnalysis() {
-  const attempt = (token) =>
-    api("/api/run", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { "X-Run-Token": token } : {}),
-      },
-    });
-  try {
-    return await attempt(localStorage.getItem("runToken") || "");
-  } catch (err) {
-    if (!err.message.includes("X-Run-Token")) throw err;
-    const token = prompt("분석 실행 토큰(RUN_TOKEN)을 입력하세요:");
-    if (!token) throw new Error("실행이 취소되었습니다");
-    const result = await attempt(token);
-    localStorage.setItem("runToken", token);
-    return result;
-  }
+function runAnalysis() {
+  return api("/api/run", { method: "POST" });
 }
 
 function setupActions() {
@@ -226,7 +312,8 @@ function setupActions() {
 (async function init() {
   setupDragAndDrop();
   setupActions();
-  await Promise.all([loadReport(), loadTasks()]);
+  setupUserActions();
+  await Promise.all([loadMe(), loadReport(), loadTasks()]);
   // 다른 직원의 변경 사항을 주기적으로 반영
   setInterval(loadTasks, 15000);
 })();
