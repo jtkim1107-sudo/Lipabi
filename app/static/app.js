@@ -463,8 +463,12 @@ function setupCommentsModal() {
 function renderWorkReport(r) {
   const body = document.getElementById("work-report-body");
   body.innerHTML = "";
-  document.getElementById("work-report-title").innerHTML =
-    `일일 업무 보고<span class="wr-date">${r.run_date || ""}</span>`;
+  if (r.run_date) {
+    const date = document.createElement("p");
+    date.className = "wr-date";
+    date.textContent = r.run_date;
+    body.appendChild(date);
+  }
 
   const summary = document.createElement("p");
   summary.className = "wr-summary";
@@ -527,6 +531,61 @@ function renderWorkReport(r) {
   }
 }
 
+function renderRetro(r) {
+  const body = document.getElementById("work-report-body");
+  body.innerHTML = "";
+
+  const summary = document.createElement("p");
+  summary.className = "wr-summary";
+  summary.textContent = r.summary;
+  body.appendChild(summary);
+
+  const section = (title, items, cls) => {
+    if (!items?.length) return;
+    const div = document.createElement("div");
+    div.className = "wr-section";
+    const h = document.createElement("h3");
+    h.textContent = title;
+    div.appendChild(h);
+    const ul = document.createElement("ul");
+    ul.className = `wr-list${cls ? " " + cls : ""}`;
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.textContent = item;
+      ul.appendChild(li);
+    }
+    div.appendChild(ul);
+    body.appendChild(div);
+  };
+
+  section("나아진 것", r.improved);
+  section("나빠진 것 / 미해결", r.worsened, "blockers");
+  section("반복되는 문제", r.recurring);
+  section("다음 주 개선 우선순위", r.priorities);
+}
+
+let reportTab = "daily";
+
+async function loadReportTab() {
+  const body = document.getElementById("work-report-body");
+  const empty = (msg) => {
+    body.innerHTML = "";
+    const p = document.createElement("p");
+    p.className = "briefing-loading";
+    p.textContent = msg;
+    body.appendChild(p);
+  };
+  if (reportTab === "daily") {
+    const latest = await api("/api/work-reports/latest");
+    if (latest && latest.content) renderWorkReport({ ...latest.content, run_date: latest.run_date });
+    else empty("아직 생성된 업무 보고가 없습니다.");
+  } else {
+    const latest = await api("/api/retros/latest");
+    if (latest && latest.content) renderRetro(latest.content);
+    else empty("아직 생성된 주간 회고가 없습니다.");
+  }
+}
+
 function setupWorkReport() {
   const modal = document.getElementById("work-report-modal");
   document.getElementById("close-work-report-modal").onclick = () => modal.classList.add("hidden");
@@ -534,13 +593,21 @@ function setupWorkReport() {
     if (e.target === modal) modal.classList.add("hidden");
   });
 
+  const setTab = async (tab) => {
+    reportTab = tab;
+    document.getElementById("tab-daily").classList.toggle("active", tab === "daily");
+    document.getElementById("tab-retro").classList.toggle("active", tab === "retro");
+    await loadReportTab();
+  };
+  document.getElementById("tab-daily").onclick = () => setTab("daily");
+  document.getElementById("tab-retro").onclick = () => setTab("retro");
+
   document.getElementById("work-report-btn").onclick = async () => {
     modal.classList.remove("hidden");
     if (["admin", "leader"].includes(currentUser?.role)) {
       document.getElementById("run-work-report-btn").classList.remove("hidden");
     }
-    const latest = await api("/api/work-reports/latest");
-    if (latest && latest.content) renderWorkReport({ ...latest.content, run_date: latest.run_date });
+    await setTab("daily");
   };
 
   const runBtn = document.getElementById("run-work-report-btn");
@@ -548,12 +615,16 @@ function setupWorkReport() {
     runBtn.disabled = true;
     runBtn.textContent = "생성 중…";
     try {
-      const result = await api("/api/work-reports/run", { method: "POST" });
+      const endpoint = reportTab === "daily" ? "/api/work-reports/run" : "/api/retros/run";
+      const result = await api(endpoint, { method: "POST" });
       if (result.generated === false) {
         toast(result.message);
-      } else {
+      } else if (reportTab === "daily") {
         renderWorkReport(result);
         toast("업무 보고를 생성했습니다");
+      } else {
+        renderRetro(result);
+        toast("주간 회고를 생성했습니다");
       }
     } catch (err) {
       toast(err.message);
@@ -561,6 +632,109 @@ function setupWorkReport() {
       runBtn.disabled = false;
       runBtn.textContent = "지금 생성";
     }
+  };
+}
+
+/* ── 문제 추적 ───────────────────────────────── */
+
+const ISSUE_STATUS = {
+  open: ["신규", ""],
+  improving: ["개선 중", "improving"],
+  worsening: ["악화 중", "worsening"],
+  stalled: ["정체", "stalled"],
+  resolved: ["해결", "improving"],
+};
+
+function setupIssues() {
+  const modal = document.getElementById("issues-modal");
+  document.getElementById("close-issues-modal").onclick = () => modal.classList.add("hidden");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+
+  const load = async () => {
+    const issues = await api("/api/issues");
+    const body = document.getElementById("issues-body");
+    body.innerHTML = "";
+    if (!issues.length) {
+      const p = document.createElement("p");
+      p.className = "briefing-loading";
+      p.textContent = "추적 중인 문제가 없습니다 — 아침 분석에서 구조적 문제가 발견되면 여기에 등록됩니다.";
+      body.appendChild(p);
+      return;
+    }
+    for (const issue of issues) {
+      const div = document.createElement("div");
+      div.className = `issue-item sev-${issue.severity}`;
+
+      const head = document.createElement("div");
+      head.className = "issue-head";
+      const title = document.createElement("span");
+      title.className = "issue-title";
+      title.textContent = issue.title;
+      const [label, cls] = ISSUE_STATUS[issue.status] || [issue.status, ""];
+      const status = document.createElement("span");
+      status.className = `issue-status ${cls}`;
+      status.textContent = label;
+      const age = document.createElement("span");
+      age.className = "issue-age";
+      const days = Math.max(
+        1, Math.round((Date.now() - new Date(issue.first_seen).getTime()) / 86400000)
+      );
+      age.textContent = `${issue.first_seen}부터 · ${days}일째`;
+      head.append(title, status, age);
+
+      if (["admin", "leader"].includes(currentUser?.role) && issue.status !== "resolved") {
+        const actions = document.createElement("span");
+        actions.className = "issue-actions";
+        const resolveBtn = document.createElement("button");
+        resolveBtn.className = "btn-mini";
+        resolveBtn.textContent = "해결 처리";
+        resolveBtn.onclick = async () => {
+          await api(`/api/issues/${issue.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "resolved" }),
+          });
+          toast("해결로 표시했습니다");
+          await load();
+        };
+        actions.appendChild(resolveBtn);
+        head.appendChild(actions);
+      }
+      div.appendChild(head);
+
+      if (issue.description) {
+        const desc = document.createElement("div");
+        desc.className = "issue-desc";
+        desc.textContent = issue.description;
+        div.appendChild(desc);
+      }
+
+      if (issue.logs?.length) {
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = `추적 기록 ${issue.logs.length}건`;
+        details.appendChild(summary);
+        for (const log of issue.logs) {
+          const line = document.createElement("div");
+          line.className = "issue-log";
+          const [logLabel] = ISSUE_STATUS[log.status] || [log.status];
+          line.innerHTML = "";
+          const b = document.createElement("b");
+          b.textContent = `${log.day} ${logLabel}`;
+          line.appendChild(b);
+          if (log.note) line.appendChild(document.createTextNode(` — ${log.note}`));
+          details.appendChild(line);
+        }
+        div.appendChild(details);
+      }
+      body.appendChild(div);
+    }
+  };
+
+  document.getElementById("issues-btn").onclick = async () => {
+    await load();
+    modal.classList.remove("hidden");
   };
 }
 
@@ -1091,6 +1265,7 @@ function setupActions() {
   setupDeliverableModal();
   setupCommentsModal();
   setupWorkReport();
+  setupIssues();
   setupEngagement();
   setupReportFeedback();
   await Promise.all([loadMe(), loadReport(), loadTasks(), loadSelfReview()]);

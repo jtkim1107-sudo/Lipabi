@@ -15,6 +15,7 @@
     <div class="header-right">
       <button id="run-btn" class="btn-primary">지금 분석 실행</button>
       <span id="user-name" class="user-name"></span>
+      <button id="issues-btn" class="btn-ghost">문제 추적</button>
       <button id="work-report-btn" class="btn-ghost">업무 보고</button>
       <button id="briefing-btn" class="btn-ghost">오늘 브리핑</button>
       <button id="my-agent-btn" class="btn-ghost">내 에이전트</button>
@@ -225,7 +226,10 @@
   <div id="work-report-modal" class="modal-backdrop hidden">
     <div class="modal modal-wide">
       <div class="modal-header">
-        <h2 id="work-report-title">일일 업무 보고</h2>
+        <div class="tab-row">
+          <button id="tab-daily" class="tab active">일일 보고</button>
+          <button id="tab-retro" class="tab">주간 회고</button>
+        </div>
         <div>
           <button id="run-work-report-btn" class="btn-ghost hidden">지금 생성</button>
           <button id="close-work-report-modal" class="btn-ghost">닫기</button>
@@ -233,6 +237,18 @@
       </div>
       <div id="work-report-body">
         <p class="briefing-loading">아직 생성된 업무 보고가 없습니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="issues-modal" class="modal-backdrop hidden">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2>문제 추적 <span class="wr-date">해결될 때까지 매일 아침 분석가가 판정합니다</span></h2>
+        <button id="close-issues-modal" class="btn-ghost">닫기</button>
+      </div>
+      <div id="issues-body">
+        <p class="briefing-loading">추적 중인 문제가 없습니다.</p>
       </div>
     </div>
   </div>

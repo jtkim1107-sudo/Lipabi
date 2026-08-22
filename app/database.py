@@ -82,6 +82,32 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (user_id, run_date)
             );
+            CREATE TABLE IF NOT EXISTS issues (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                severity TEXT NOT NULL DEFAULT 'medium',
+                status TEXT NOT NULL DEFAULT 'open',
+                first_seen TEXT NOT NULL,
+                resolved_at TEXT NOT NULL DEFAULT '',
+                report_id INTEGER REFERENCES reports(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS issue_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+                day TEXT NOT NULL,
+                status TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS retros (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                week_of TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS activities (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 day TEXT NOT NULL,
@@ -499,6 +525,120 @@ def list_reports(limit: int = 30) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM reports ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [_report_row(r) for r in rows]
+
+
+# ── 문제 추적 (이슈) ────────────────────────────────────
+
+ISSUE_STATUSES = ("open", "improving", "worsening", "stalled", "resolved")
+
+
+def create_issue(title: str, description: str = "", severity: str = "medium",
+                 report_id: int | None = None, day: str = "") -> dict:
+    now = _now()
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO issues (title, description, severity, status, first_seen,
+                                   report_id, created_at, updated_at)
+               VALUES (?,?,?, 'open', ?,?,?,?)""",
+            (title, description, severity, day, report_id, now, now),
+        )
+        row = conn.execute("SELECT * FROM issues WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+
+def list_issues(include_resolved: bool = False) -> list[dict]:
+    q = "SELECT * FROM issues"
+    if not include_resolved:
+        q += " WHERE status != 'resolved'"
+    q += " ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, id DESC"
+    with get_conn() as conn:
+        rows = conn.execute(q).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_issue(issue_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM issues WHERE id = ?", (issue_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def find_open_issue_by_title(title: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM issues WHERE title = ? AND status != 'resolved'", (title,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_issue_status(issue_id: int, status: str) -> dict | None:
+    if status not in ISSUE_STATUSES:
+        raise ValueError(f"잘못된 상태값: {status}")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE issues SET status = ?, resolved_at = CASE WHEN ? = 'resolved' THEN ? ELSE resolved_at END, "
+            "updated_at = ? WHERE id = ?",
+            (status, status, _now(), _now(), issue_id),
+        )
+    return get_issue(issue_id)
+
+
+def add_issue_log(issue_id: int, day: str, status: str, note: str = "") -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO issue_logs (issue_id, day, status, note, created_at) VALUES (?,?,?,?,?)",
+            (issue_id, day, status, note, _now()),
+        )
+
+
+def list_issue_logs(issue_id: int, limit: int = 30) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM issue_logs WHERE issue_id = ? ORDER BY id DESC LIMIT ?",
+            (issue_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── 주간 회고 ───────────────────────────────────────────
+
+def save_retro(week_of: str, content: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO retros (week_of, content, created_at) VALUES (?,?,?)",
+            (week_of, content, _now()),
+        )
+        return cur.lastrowid
+
+
+def get_latest_retro() -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM retros ORDER BY id DESC LIMIT 1").fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["content"] = json.loads(d["content"])
+        return d
+
+
+def list_reports_since(run_date_from: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM reports WHERE run_date >= ? ORDER BY id", (run_date_from,)
+        ).fetchall()
+        return [_report_row(r) for r in rows]
+
+
+def list_reviews_since(run_date_from: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM reviews WHERE run_date >= ? ORDER BY id", (run_date_from,)
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["content"] = json.loads(d["content"])
+            out.append(d)
+        return out
 
 
 # ── 활동 로그 ───────────────────────────────────────────

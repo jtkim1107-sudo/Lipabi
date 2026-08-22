@@ -113,6 +113,41 @@ def send_briefing(user: dict, briefing: dict) -> bool:
     )
 
 
+def retro_html(retro: dict) -> str:
+    def ul(items, color="#1a1a1a"):
+        lis = "".join(f'<li style="color:{color};margin:4px 0">{_esc(i)}</li>' for i in items)
+        return f'<ul style="padding-left:20px">{lis}</ul>'
+
+    sections = f"<p>{_esc(retro.get('summary'))}</p>"
+    if retro.get("improved"):
+        sections += "<h3 style='font-size:14px;color:#30a46c'>나아진 것</h3>" + ul(retro["improved"])
+    if retro.get("worsened"):
+        sections += "<h3 style='font-size:14px;color:#e5484d'>나빠진 것 / 미해결</h3>" + ul(
+            retro["worsened"], color="#e5484d"
+        )
+    if retro.get("recurring"):
+        sections += "<h3 style='font-size:14px'>반복되는 문제</h3>" + ul(retro["recurring"])
+    if retro.get("priorities"):
+        sections += "<h3 style='font-size:14px'>다음 주 우선순위</h3>" + ul(retro["priorities"])
+    return (
+        f'<div style="{_STYLE_BODY}">'
+        f'<h2 style="font-size:17px">🔁 주간 개선 회고 — {_esc(retro.get("week_of"))}</h2>'
+        f"{sections}{_footer()}</div>"
+    )
+
+
+def send_retro(recipients: list[dict], retro: dict) -> int:
+    sent = 0
+    for u in recipients:
+        if u.get("email") and send(
+            u["email"],
+            f"[Lipabi] 주간 개선 회고 ({retro.get('week_of', '')})",
+            retro_html(retro),
+        ):
+            sent += 1
+    return sent
+
+
 def send_work_report(recipients: list[dict], report: dict) -> int:
     sent = 0
     for u in recipients:

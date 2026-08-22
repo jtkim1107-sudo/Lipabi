@@ -84,11 +84,27 @@ def run_daily_pipeline() -> dict:
         except Exception:
             logger.exception("자기 채점 실패 — 오늘 분석은 계속 진행")
 
+    # 추적 중인 문제 목록을 분석 프롬프트에 전달
+    ISSUE_STATUS_LABEL = {
+        "open": "신규", "improving": "개선 중", "worsening": "악화 중",
+        "stalled": "정체", "resolved": "해결",
+    }
+    open_issues = database.list_issues()
+    issue_lines = []
+    for i in open_issues:
+        recent = database.list_issue_logs(i["id"], limit=2)
+        note = f" — 최근 기록: {recent[0]['note']}" if recent and recent[0]["note"] else ""
+        issue_lines.append(
+            f"- [#{i['id']}] {i['title']} (심각도 {i['severity']}, {i['first_seen']}부터, "
+            f"현재 {ISSUE_STATUS_LABEL.get(i['status'], i['status'])}){note}"
+        )
+    issues_text = "\n".join(issue_lines)
+
     profile = database.get_agent_profile()
     pending = [r["title"] for r in database.list_data_requests(statuses=("open", "tasked"))]
     result = analyzer.analyze(
         query_results, run_date, profile, roster=_build_roster(),
-        pending_requests=pending, self_review=self_review_text,
+        pending_requests=pending, self_review=self_review_text, issues_text=issues_text,
     )
 
     data_notes = "; ".join(errors)
@@ -132,6 +148,26 @@ def run_daily_pipeline() -> dict:
             data_request_to_task(row, priority="high")
             blocking_tasks += 1
 
+    # 문제 추적: 기존 이슈 상태 판정 반영 + 새 이슈 등록 (제목 중복 방지)
+    valid_ids = {i["id"] for i in open_issues}
+    issues_updated = 0
+    for up in result.issue_updates:
+        if up.issue_id not in valid_ids:
+            continue
+        database.update_issue_status(up.issue_id, up.status)
+        database.add_issue_log(up.issue_id, run_date, up.status, up.note)
+        issues_updated += 1
+    issues_created = 0
+    for ni in result.new_issues:
+        if database.find_open_issue_by_title(ni.title):
+            continue
+        issue = database.create_issue(
+            title=ni.title, description=ni.description, severity=ni.severity,
+            report_id=report_id, day=run_date,
+        )
+        database.add_issue_log(issue["id"], run_date, "open", "문제 등록")
+        issues_created += 1
+
     # 아침 자동화: 분석 직후 전 직원 브리핑을 미리 생성하고 이메일로도 배달
     briefings_created = 0
     emails_sent = 0
@@ -159,6 +195,8 @@ def run_daily_pipeline() -> dict:
         "briefing_emails_sent": emails_sent,
         "data_requests_created": requests_created,
         "blocking_tasks_created": blocking_tasks,
+        "issues_updated": issues_updated,
+        "issues_created": issues_created,
         "self_review": review_stats,
         "data_errors": errors,
     }

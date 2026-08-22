@@ -29,6 +29,8 @@ WEEKLY_TRAIN = os.getenv("WEEKLY_TRAIN", "mon 06:30")
 SELF_REVIEW = os.getenv("SELF_REVIEW", "true").lower() in ("1", "true", "yes")
 # 저녁 업무 보고 자동 생성 시각 (HH:MM). 비우면 비활성화
 DAILY_REPORT_TIME = os.getenv("DAILY_REPORT_TIME", "18:00")
+# 주간 개선 회고 (요일 시:분). 비우면 비활성화
+WEEKLY_RETRO = os.getenv("WEEKLY_RETRO", "fri 17:00")
 
 # ── 이메일 발송 (SMTP 설정이 있으면 브리핑/보고를 메일로도 배달) ──
 SMTP_HOST = os.getenv("SMTP_HOST", "")

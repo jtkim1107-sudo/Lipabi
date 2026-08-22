@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from datetime import datetime as dt
 from zoneinfo import ZoneInfo
 
-from . import auth, briefer, coach, config, database, mailer, pipeline, reporter, worker
+from . import auth, briefer, coach, config, database, mailer, pipeline, reporter, retro, worker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -50,6 +50,21 @@ def _scheduled_work_report():
                 logger.info("업무 보고 메일 %d건 발송", sent)
     except Exception:
         logger.exception("저녁 업무 보고 생성 실패")
+
+
+def _scheduled_weekly_retro():
+    try:
+        result = retro.run_and_save(_today())
+        logger.info("주간 회고: %s", result.get("summary", result.get("message")))
+        if result.get("generated"):
+            recipients = [
+                u for u in database.list_users() if u["role"] in ("admin", "leader")
+            ]
+            sent = mailer.send_retro(recipients, result)
+            if sent:
+                logger.info("주간 회고 메일 %d건 발송", sent)
+    except Exception:
+        logger.exception("주간 회고 생성 실패")
 
 
 def _scheduled_weekly_train():
@@ -108,6 +123,19 @@ async def lifespan(app: FastAPI):
             replace_existing=True,
         )
         logger.info("매일 %s 업무 보고 예약됨", config.DAILY_REPORT_TIME)
+    if config.WEEKLY_RETRO.strip():
+        try:
+            rt_day, rt_hhmm = config.WEEKLY_RETRO.strip().split()
+            rt_hour, rt_minute = rt_hhmm.split(":")
+            scheduler.add_job(
+                _scheduled_weekly_retro,
+                CronTrigger(day_of_week=rt_day, hour=int(rt_hour), minute=int(rt_minute)),
+                id="weekly_retro",
+                replace_existing=True,
+            )
+            logger.info("매주 %s 개선 회고 예약됨", config.WEEKLY_RETRO)
+        except ValueError:
+            logger.error("WEEKLY_RETRO 형식 오류 (예: 'fri 17:00'): %r", config.WEEKLY_RETRO)
     if config.WEEKLY_TRAIN.strip():
         try:
             day, hhmm = config.WEEKLY_TRAIN.strip().split()
@@ -147,6 +175,12 @@ def require_user(user: dict | None = Depends(get_current_user)) -> dict:
 def require_admin(user: dict = Depends(require_user)) -> dict:
     if user["role"] != "admin":
         raise HTTPException(403, "관리자 권한이 필요합니다")
+    return user
+
+
+def require_leader_or_admin(user: dict = Depends(require_user)) -> dict:
+    if user["role"] not in ("admin", "leader"):
+        raise HTTPException(403, "팀장 또는 관리자 권한이 필요합니다")
     return user
 
 
@@ -627,13 +661,53 @@ def api_unblock_task(task_id: int, user: dict = Depends(require_user)):
     return updated
 
 
-# ── 업무 보고 ───────────────────────────────────────────
+# ── 문제 추적 ───────────────────────────────────────────
 
-def require_leader_or_admin(user: dict = Depends(require_user)) -> dict:
+class IssueStatusBody(BaseModel):
+    status: str
+
+
+@app.get("/api/issues")
+def api_list_issues(_: dict = Depends(require_user), all: bool = False):
+    issues = database.list_issues(include_resolved=all)
+    for i in issues:
+        i["logs"] = database.list_issue_logs(i["id"], limit=10)
+    return issues
+
+
+@app.patch("/api/issues/{issue_id}")
+def api_update_issue(issue_id: int, body: IssueStatusBody,
+                     user: dict = Depends(require_user)):
     if user["role"] not in ("admin", "leader"):
         raise HTTPException(403, "팀장 또는 관리자 권한이 필요합니다")
-    return user
+    issue = database.get_issue(issue_id)
+    if not issue:
+        raise HTTPException(404, "문제를 찾을 수 없습니다")
+    try:
+        updated = database.update_issue_status(issue_id, body.status)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    database.add_issue_log(issue_id, _today(), body.status, f"{user['name']} 수동 변경")
+    return updated
 
+
+# ── 주간 회고 ───────────────────────────────────────────
+
+@app.get("/api/retros/latest")
+def api_latest_retro(_: dict = Depends(require_user)):
+    return database.get_latest_retro() or {}
+
+
+@app.post("/api/retros/run")
+def api_run_retro(_: dict = Depends(require_leader_or_admin)):
+    try:
+        return retro.run_and_save(_today())
+    except Exception as e:
+        logger.exception("주간 회고 생성 실패")
+        raise HTTPException(500, f"주간 회고 생성 실패: {e}")
+
+
+# ── 업무 보고 ───────────────────────────────────────────
 
 @app.get("/api/work-reports/latest")
 def api_latest_work_report(_: dict = Depends(require_user)):
