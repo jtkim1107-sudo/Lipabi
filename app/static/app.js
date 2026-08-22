@@ -248,6 +248,136 @@ function setupAgentModal() {
   };
 }
 
+/* ── 내 에이전트 (직원 개인) ─────────────────── */
+
+async function openMyAgentModal() {
+  const agent = await api("/api/my-agent");
+  document.getElementById("my-agent-name").value = agent.name || "";
+  document.getElementById("my-agent-instructions").value = agent.instructions || "";
+  document.getElementById("my-agent-lessons").textContent =
+    agent.lessons?.trim() || "(아직 학습된 내용이 없습니다)";
+  document.getElementById("my-pending-fb").textContent = agent.pending_feedback ?? 0;
+  document.getElementById("my-train-changelog").classList.add("hidden");
+  document.getElementById("my-agent-modal").classList.remove("hidden");
+}
+
+function setupMyAgentModal() {
+  const modal = document.getElementById("my-agent-modal");
+  document.getElementById("my-agent-btn").onclick = openMyAgentModal;
+  document.getElementById("close-my-agent-modal").onclick = () => modal.classList.add("hidden");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+
+  document.getElementById("save-my-agent-btn").onclick = async () => {
+    try {
+      await api("/api/my-agent", {
+        method: "PUT",
+        body: JSON.stringify({
+          name: document.getElementById("my-agent-name").value.trim(),
+          instructions: document.getElementById("my-agent-instructions").value,
+        }),
+      });
+      toast("내 에이전트를 저장했습니다 — 다음 브리핑부터 반영됩니다");
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+
+  const trainBtn = document.getElementById("train-my-agent-btn");
+  trainBtn.onclick = async () => {
+    trainBtn.disabled = true;
+    trainBtn.textContent = "학습 중…";
+    let pending = 0;
+    try {
+      const result = await api("/api/my-agent/train", { method: "POST" });
+      if (!result.trained) {
+        toast(result.message);
+        pending = Number(document.getElementById("my-pending-fb")?.textContent) || 0;
+      } else {
+        document.getElementById("my-agent-lessons").textContent = result.lessons;
+        const log = document.getElementById("my-train-changelog");
+        log.textContent = `✓ 피드백 ${result.feedback_count}건 반영 — ${result.changelog}`;
+        log.classList.remove("hidden");
+        toast("학습 완료! 다음 브리핑부터 반영됩니다");
+      }
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      trainBtn.disabled = false;
+      trainBtn.innerHTML = `피드백 학습하기 (<span id="my-pending-fb">${pending}</span>건 대기)`;
+    }
+  };
+}
+
+/* ── 오늘 브리핑 ─────────────────────────────── */
+
+function renderBriefing(b) {
+  const body = document.getElementById("briefing-body");
+  body.innerHTML = "";
+
+  const headline = document.createElement("p");
+  headline.className = "briefing-headline";
+  headline.textContent = b.headline;
+  body.appendChild(headline);
+
+  const list = document.createElement("ol");
+  list.className = "focus-list";
+  (b.focus || []).forEach((item, i) => {
+    const li = document.createElement("li");
+    li.className = "focus-item";
+    const num = document.createElement("span");
+    num.className = "focus-num";
+    num.textContent = i + 1;
+    const content = document.createElement("div");
+    const title = document.createElement("div");
+    title.className = "focus-title";
+    title.textContent = item.title;
+    const reason = document.createElement("div");
+    reason.className = "focus-reason";
+    reason.textContent = item.reason;
+    content.append(title, reason);
+    li.append(num, content);
+    list.appendChild(li);
+  });
+  body.appendChild(list);
+
+  if (b.tip) {
+    const tip = document.createElement("p");
+    tip.className = "briefing-tip";
+    tip.textContent = `💡 ${b.tip}`;
+    body.appendChild(tip);
+  }
+}
+
+function setupBriefing() {
+  const modal = document.getElementById("briefing-modal");
+  const body = document.getElementById("briefing-body");
+
+  const load = async (refresh) => {
+    body.innerHTML = '<p class="briefing-loading">브리핑을 준비하는 중… (수십 초 걸릴 수 있어요)</p>';
+    modal.classList.remove("hidden");
+    try {
+      const b = await api(`/api/briefing${refresh ? "?refresh=true" : ""}`);
+      document.getElementById("briefing-title").textContent = `오늘 브리핑 · ${b.run_date || ""}`;
+      renderBriefing(b);
+    } catch (err) {
+      body.innerHTML = "";
+      const p = document.createElement("p");
+      p.className = "briefing-loading";
+      p.textContent = err.message;
+      body.appendChild(p);
+    }
+  };
+
+  document.getElementById("briefing-btn").onclick = () => load(false);
+  document.getElementById("refresh-briefing-btn").onclick = () => load(true);
+  document.getElementById("close-briefing-modal").onclick = () => modal.classList.add("hidden");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+}
+
 function setupReportFeedback() {
   const send = async (signal) => {
     if (!latestReportId) return;
@@ -411,6 +541,8 @@ function setupActions() {
   setupActions();
   setupUserActions();
   setupAgentModal();
+  setupMyAgentModal();
+  setupBriefing();
   setupReportFeedback();
   await Promise.all([loadMe(), loadReport(), loadTasks()]);
   // 다른 직원의 변경 사항을 주기적으로 반영

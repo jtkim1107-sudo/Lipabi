@@ -15,7 +15,10 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, coach, config, database, pipeline
+from datetime import datetime as dt
+from zoneinfo import ZoneInfo
+
+from . import auth, briefer, coach, config, database, pipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -272,12 +275,51 @@ def api_add_feedback(body: FeedbackBody, user: dict = Depends(require_user)):
         comment=body.comment.strip(),
         context=body.context.strip(),
         user_name=user["name"],
+        user_id=user["id"],
     )
 
 
 @app.get("/api/feedback")
 def api_list_feedback(_: dict = Depends(require_admin)):
     return database.list_feedback(limit=50)
+
+
+# ── 개인 에이전트 / 오늘 브리핑 ─────────────────────────
+
+def _today() -> str:
+    return dt.now(ZoneInfo(config.TIMEZONE)).strftime("%Y-%m-%d")
+
+
+@app.get("/api/my-agent")
+def api_get_my_agent(user: dict = Depends(require_user)):
+    agent = database.get_user_agent(user["id"], default_name=f"{user['name']}의 에이전트")
+    agent["pending_feedback"] = database.count_unconsumed_personal_feedback(user["id"])
+    return agent
+
+
+@app.put("/api/my-agent")
+def api_update_my_agent(body: AgentUpdateBody, user: dict = Depends(require_user)):
+    return database.update_user_agent(
+        user["id"], name=body.name, instructions=body.instructions
+    )
+
+
+@app.post("/api/my-agent/train")
+def api_train_my_agent(user: dict = Depends(require_user)):
+    try:
+        return coach.train_personal(user)
+    except Exception as e:
+        logger.exception("개인 에이전트 학습 실패")
+        raise HTTPException(500, f"학습 실패: {e}")
+
+
+@app.get("/api/briefing")
+def api_get_briefing(user: dict = Depends(require_user), refresh: bool = False):
+    try:
+        return briefer.get_or_create(user, _today(), refresh=refresh)
+    except Exception as e:
+        logger.exception("브리핑 생성 실패")
+        raise HTTPException(500, f"브리핑 생성 실패: {e}")
 
 
 # ── 페이지 ──────────────────────────────────────────────
@@ -349,6 +391,7 @@ def api_update_task(task_id: int, body: TaskUpdate, user: dict = Depends(require
             ref_id=task_id,
             context=before["title"],
             user_name=user["name"],
+            user_id=user["id"],
         )
     return task
 
@@ -368,6 +411,7 @@ def api_delete_task(task_id: int, user: dict = Depends(require_user), reason: st
             comment=reason.strip(),
             context=task["title"],
             user_name=user["name"],
+            user_id=user["id"],
         )
     return {"ok": True}
 

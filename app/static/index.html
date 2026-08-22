@@ -15,6 +15,8 @@
     <div class="header-right">
       <button id="run-btn" class="btn-primary">지금 분석 실행</button>
       <span id="user-name" class="user-name"></span>
+      <button id="briefing-btn" class="btn-ghost">오늘 브리핑</button>
+      <button id="my-agent-btn" class="btn-ghost">내 에이전트</button>
       <button id="agent-btn" class="btn-ghost hidden">내 분석가</button>
       <button id="manage-users-btn" class="btn-ghost hidden">직원 관리</button>
       <button id="logout-btn" class="btn-ghost">로그아웃</button>
@@ -111,6 +113,46 @@
       <label class="field-label">학습된 교훈 — 피드백에서 자동으로 정리됩니다</label>
       <pre id="agent-lessons" class="lessons-box">(아직 학습된 교훈이 없습니다)</pre>
       <p id="train-changelog" class="train-changelog hidden"></p>
+    </div>
+  </div>
+
+  <div id="my-agent-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>내 에이전트</h2>
+        <button id="close-my-agent-modal" class="btn-ghost">닫기</button>
+      </div>
+      <label class="field-label" for="my-agent-name">이름</label>
+      <input type="text" id="my-agent-name" class="field-input" placeholder="예: 김대리의 비서">
+      <label class="field-label" for="my-agent-instructions">나에 대해 — 역할, 선호, 일하는 방식</label>
+      <textarea id="my-agent-instructions" class="field-textarea" rows="7"
+        placeholder="예)
+- 나는 마케팅 담당, 광고/프로모션 업무를 우선 맡는다
+- 오전에는 집중 업무, 회의성 업무는 오후로
+- 재무 관련 업무는 내 담당이 아님
+- 브리핑은 짧고 실행 위주로"></textarea>
+      <div class="agent-actions">
+        <button id="save-my-agent-btn" class="btn-primary">저장</button>
+        <button id="train-my-agent-btn" class="btn-primary">피드백 학습하기 (<span id="my-pending-fb">0</span>건 대기)</button>
+      </div>
+      <label class="field-label">나에 대해 학습한 내용 — 내 행동과 피드백에서 자동 정리</label>
+      <pre id="my-agent-lessons" class="lessons-box">(아직 학습된 내용이 없습니다)</pre>
+      <p id="my-train-changelog" class="train-changelog hidden"></p>
+    </div>
+  </div>
+
+  <div id="briefing-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="briefing-title">오늘 브리핑</h2>
+        <div>
+          <button id="refresh-briefing-btn" class="btn-ghost">다시 생성</button>
+          <button id="close-briefing-modal" class="btn-ghost">닫기</button>
+        </div>
+      </div>
+      <div id="briefing-body">
+        <p class="briefing-loading">브리핑을 준비하는 중…</p>
+      </div>
     </div>
   </div>
 

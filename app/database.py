@@ -65,6 +65,20 @@ def init_db() -> None:
                 consumed INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS user_agents (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                instructions TEXT NOT NULL DEFAULT '',
+                lessons TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS briefings (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                run_date TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, run_date)
+            );
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 report_id INTEGER REFERENCES reports(id) ON DELETE SET NULL,
@@ -79,6 +93,18 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             );
             """
+        )
+        _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """기존 DB에 새 컬럼을 추가하는 경량 마이그레이션."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(feedback)")}
+    if "user_id" not in cols:
+        conn.execute("ALTER TABLE feedback ADD COLUMN user_id INTEGER")
+    if "personal_consumed" not in cols:
+        conn.execute(
+            "ALTER TABLE feedback ADD COLUMN personal_consumed INTEGER NOT NULL DEFAULT 0"
         )
 
 
@@ -113,15 +139,73 @@ def update_agent_profile(name: str | None = None, instructions: str | None = Non
     return get_agent_profile()
 
 
+# ── 개인 에이전트 ───────────────────────────────────────
+
+def get_user_agent(user_id: int, default_name: str = "나의 에이전트") -> dict:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM user_agents WHERE user_id = ?", (user_id,)).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO user_agents (user_id, name, instructions, lessons, updated_at) "
+                "VALUES (?,?,'','',?)",
+                (user_id, default_name, _now()),
+            )
+            row = conn.execute(
+                "SELECT * FROM user_agents WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        return dict(row)
+
+
+def update_user_agent(user_id: int, name: str | None = None, instructions: str | None = None,
+                      lessons: str | None = None) -> dict:
+    get_user_agent(user_id)
+    updates = {
+        k: v
+        for k, v in (("name", name), ("instructions", instructions), ("lessons", lessons))
+        if v is not None
+    }
+    updates["updated_at"] = _now()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE user_agents SET {set_clause} WHERE user_id = ?",
+            (*updates.values(), user_id),
+        )
+    return get_user_agent(user_id)
+
+
+# ── 브리핑 캐시 ─────────────────────────────────────────
+
+def get_briefing(user_id: int, run_date: str) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT content FROM briefings WHERE user_id = ? AND run_date = ?",
+            (user_id, run_date),
+        ).fetchone()
+        return row["content"] if row else None
+
+
+def save_briefing(user_id: int, run_date: str, content: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO briefings (user_id, run_date, content, created_at)
+               VALUES (?,?,?,?)
+               ON CONFLICT(user_id, run_date) DO UPDATE SET content = excluded.content,
+                                                            created_at = excluded.created_at""",
+            (user_id, run_date, content, _now()),
+        )
+
+
 # ── 피드백 ──────────────────────────────────────────────
 
 def add_feedback(kind: str, signal: str, ref_id: int | None = None, comment: str = "",
-                 context: str = "", user_name: str = "") -> dict:
+                 context: str = "", user_name: str = "", user_id: int | None = None) -> dict:
     with get_conn() as conn:
         cur = conn.execute(
-            """INSERT INTO feedback (kind, ref_id, signal, comment, context, user_name, created_at)
-               VALUES (?,?,?,?,?,?,?)""",
-            (kind, ref_id, signal, comment, context, user_name, _now()),
+            """INSERT INTO feedback (kind, ref_id, signal, comment, context, user_name,
+                                     user_id, created_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (kind, ref_id, signal, comment, context, user_name, user_id, _now()),
         )
         row = conn.execute("SELECT * FROM feedback WHERE id = ?", (cur.lastrowid,)).fetchone()
         return dict(row)
@@ -148,6 +232,35 @@ def mark_feedback_consumed(ids: list[int]) -> None:
     placeholders = ",".join("?" * len(ids))
     with get_conn() as conn:
         conn.execute(f"UPDATE feedback SET consumed = 1 WHERE id IN ({placeholders})", ids)
+
+
+def list_personal_feedback(user_id: int, limit: int = 200,
+                           unconsumed_only: bool = False) -> list[dict]:
+    q = "SELECT * FROM feedback WHERE user_id = ?"
+    if unconsumed_only:
+        q += " AND personal_consumed = 0"
+    q += " ORDER BY id DESC LIMIT ?"
+    with get_conn() as conn:
+        rows = conn.execute(q, (user_id, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def count_unconsumed_personal_feedback(user_id: int) -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM feedback WHERE user_id = ? AND personal_consumed = 0",
+            (user_id,),
+        ).fetchone()[0]
+
+
+def mark_personal_consumed(ids: list[int]) -> None:
+    if not ids:
+        return
+    placeholders = ",".join("?" * len(ids))
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE feedback SET personal_consumed = 1 WHERE id IN ({placeholders})", ids
+        )
 
 
 # ── 사용자 ──────────────────────────────────────────────

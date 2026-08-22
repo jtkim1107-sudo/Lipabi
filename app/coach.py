@@ -42,13 +42,19 @@ TRAIN_SYSTEM_PROMPT = """당신은 데이터 분석 에이전트를 교육하는
 - 모든 출력은 한국어로 작성합니다."""
 
 
-def train() -> dict:
-    """미반영 피드백을 교훈으로 정리하고 프로필을 갱신한다."""
-    profile = database.get_agent_profile()
-    feedback = database.list_feedback(limit=200, unconsumed_only=True)
-    if not feedback:
-        return {"trained": False, "message": "새로 반영할 피드백이 없습니다", "lessons": profile["lessons"]}
+PERSONAL_TRAIN_SYSTEM_PROMPT = """당신은 개인 업무 비서 에이전트를 교육하는 코치입니다. \
+한 직원이 남긴 피드백과 업무 처리 행동을 바탕으로, 그 직원의 개인 에이전트가 따라야 할 \
+'교훈'(그 직원의 선호와 일하는 방식) 목록을 갱신합니다.
 
+규칙:
+- 기존 교훈 중 여전히 유효한 것은 유지하고, 새 피드백과 모순되면 수정합니다.
+- 개별 사건이 아니라 이 직원의 일반적 선호/업무 스타일로 정리합니다.
+  (예: "8월 12일 광고 카드 수락" ❌ → "마케팅/광고 관련 업무를 우선 맡는 편" ⭕)
+- 최대 12개 불릿, 각 불릿은 한 문장으로 간결하게.
+- 모든 출력은 한국어로 작성합니다."""
+
+
+def _feedback_lines(feedback: list[dict], include_user: bool) -> str:
     lines = []
     for f in reversed(feedback):  # 시간순
         kind = KIND_LABEL.get(f["kind"], f["kind"])
@@ -58,33 +64,73 @@ def train() -> dict:
             line += f" — 대상: {f['context']}"
         if f["comment"]:
             line += f" — 코멘트: {f['comment']}"
-        if f["user_name"]:
+        if include_user and f["user_name"]:
             line += f" (작성: {f['user_name']})"
         lines.append(line)
+    return "\n".join(lines)
 
+
+def _consolidate(system_prompt: str, instructions: str, lessons: str, feedback_text: str) -> TrainingResult:
     user_message = (
-        "## 운영자 지침\n"
-        + (profile["instructions"].strip() or "(없음)")
+        "## 지침\n"
+        + (instructions.strip() or "(없음)")
         + "\n\n## 현재 교훈\n"
-        + (profile["lessons"].strip() or "(아직 없음)")
+        + (lessons.strip() or "(아직 없음)")
         + "\n\n## 새로 쌓인 피드백\n"
-        + "\n".join(lines)
+        + feedback_text
         + "\n\n위 피드백을 반영해 교훈 목록을 갱신해 주세요."
     )
-
     client = anthropic.Anthropic()
     response = client.messages.parse(
         model=config.ANALYSIS_MODEL,
         max_tokens=16000,
-        system=TRAIN_SYSTEM_PROMPT,
+        system=system_prompt,
         messages=[{"role": "user", "content": user_message}],
         output_format=TrainingResult,
     )
-    result = response.parsed_output
+    return response.parsed_output
 
+
+def train() -> dict:
+    """전사 분석가: 미반영 피드백 전체를 교훈으로 정리하고 프로필을 갱신한다."""
+    profile = database.get_agent_profile()
+    feedback = database.list_feedback(limit=200, unconsumed_only=True)
+    if not feedback:
+        return {"trained": False, "message": "새로 반영할 피드백이 없습니다", "lessons": profile["lessons"]}
+
+    result = _consolidate(
+        TRAIN_SYSTEM_PROMPT,
+        profile["instructions"],
+        profile["lessons"],
+        _feedback_lines(feedback, include_user=True),
+    )
     database.update_agent_profile(lessons=result.lessons)
     database.mark_feedback_consumed([f["id"] for f in feedback])
-    logger.info("에이전트 학습 완료: 피드백 %d건 반영", len(feedback))
+    logger.info("전사 분석가 학습 완료: 피드백 %d건 반영", len(feedback))
+    return {
+        "trained": True,
+        "feedback_count": len(feedback),
+        "lessons": result.lessons,
+        "changelog": result.changelog,
+    }
+
+
+def train_personal(user: dict) -> dict:
+    """개인 에이전트: 해당 직원의 미반영 피드백을 교훈으로 정리한다."""
+    agent = database.get_user_agent(user["id"], default_name=f"{user['name']}의 에이전트")
+    feedback = database.list_personal_feedback(user["id"], limit=200, unconsumed_only=True)
+    if not feedback:
+        return {"trained": False, "message": "새로 반영할 피드백이 없습니다", "lessons": agent["lessons"]}
+
+    result = _consolidate(
+        PERSONAL_TRAIN_SYSTEM_PROMPT,
+        agent["instructions"],
+        agent["lessons"],
+        _feedback_lines(feedback, include_user=False),
+    )
+    database.update_user_agent(user["id"], lessons=result.lessons)
+    database.mark_personal_consumed([f["id"] for f in feedback])
+    logger.info("개인 에이전트 학습 완료 (%s): 피드백 %d건 반영", user["name"], len(feedback))
     return {
         "trained": True,
         "feedback_count": len(feedback),
