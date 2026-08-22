@@ -1,0 +1,34 @@
+# 매일 아침 자동 분석 (선택 사항)
+#
+# 칸반보드 서버를 외부에서 접속 가능한 곳(사내 서버, 클라우드 등)에 띄운 경우,
+# 이 워크플로가 매일 아침 서버의 분석 API를 호출해 줍니다.
+#
+# 필요한 GitHub Secrets:
+#   KANBAN_API_URL : 예) https://kanban.mycompany.com
+#   RUN_TOKEN      : 서버 .env의 RUN_TOKEN과 동일한 값
+#
+# 참고: 서버 자체에 내장된 스케줄러(APScheduler)가 이미 매일 아침 실행되므로,
+# 서버가 항상 켜져 있다면 이 워크플로는 없어도 됩니다. 이중 실행을 원치 않으면
+# 서버의 DAILY_RUN_TIME과 겹치지 않게 하거나 둘 중 하나만 사용하세요.
+
+name: daily-analysis
+
+on:
+  schedule:
+    # UTC 22:00 = 한국시간(KST) 아침 07:00
+    - cron: "0 22 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 분석 API 호출
+        run: |
+          if [ -z "${{ secrets.KANBAN_API_URL }}" ]; then
+            echo "KANBAN_API_URL 시크릿이 설정되지 않아 건너뜁니다."
+            exit 0
+          fi
+          curl --fail-with-body -sS -X POST \
+            -H "X-Run-Token: ${{ secrets.RUN_TOKEN }}" \
+            "${{ secrets.KANBAN_API_URL }}/api/run"

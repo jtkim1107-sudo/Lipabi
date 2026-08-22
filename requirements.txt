@@ -1,0 +1,8 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+msal>=1.28
+requests>=2.32
+anthropic>=1.0
+apscheduler>=3.10
+python-dotenv>=1.0
+pydantic>=2.7

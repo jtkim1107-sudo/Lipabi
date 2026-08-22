@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lipabi — AI 분석 칸반보드</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1>📊 Lipabi</h1>
+      <span class="subtitle">Power BI 데이터 · AI 아침 분석 · 팀 칸반보드</span>
+    </div>
+    <button id="run-btn" class="btn-primary">지금 분석 실행</button>
+  </header>
+
+  <section id="report-panel" class="report-panel hidden">
+    <div class="report-header">
+      <h2>🤖 오늘의 AI 분석 <span id="report-date"></span></h2>
+      <button id="toggle-report" class="btn-ghost">접기</button>
+    </div>
+    <div id="report-body">
+      <p id="report-summary"></p>
+      <ul id="report-insights"></ul>
+      <p id="report-notes" class="report-notes"></p>
+    </div>
+  </section>
+
+  <main class="board">
+    <div class="column" data-status="suggested">
+      <div class="column-header col-suggested">
+        <h3>🤖 AI 제안</h3><span class="count"></span>
+      </div>
+      <div class="cards" data-status="suggested"></div>
+    </div>
+    <div class="column" data-status="todo">
+      <div class="column-header col-todo">
+        <h3>📋 할 일</h3><span class="count"></span>
+        <button class="btn-add" id="add-task-btn" title="업무 추가">＋</button>
+      </div>
+      <div class="cards" data-status="todo"></div>
+    </div>
+    <div class="column" data-status="in_progress">
+      <div class="column-header col-progress">
+        <h3>🔨 진행 중</h3><span class="count"></span>
+      </div>
+      <div class="cards" data-status="in_progress"></div>
+    </div>
+    <div class="column" data-status="done">
+      <div class="column-header col-done">
+        <h3>✅ 완료</h3><span class="count"></span>
+      </div>
+      <div class="cards" data-status="done"></div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
