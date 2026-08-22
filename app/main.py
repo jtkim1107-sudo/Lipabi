@@ -373,6 +373,54 @@ def api_get_briefing(user: dict = Depends(require_user), refresh: bool = False):
         raise HTTPException(500, f"브리핑 생성 실패: {e}")
 
 
+# ── 데이터 요청 ─────────────────────────────────────────
+
+class DataRequestStatusBody(BaseModel):
+    status: str
+
+
+@app.get("/api/data-requests")
+def api_list_data_requests(_: dict = Depends(require_user), all: bool = False):
+    statuses = None if all else ("open", "tasked")
+    return database.list_data_requests(statuses=statuses)
+
+
+@app.patch("/api/data-requests/{request_id}")
+def api_update_data_request(
+    request_id: int, body: DataRequestStatusBody, _: dict = Depends(require_admin)
+):
+    if not database.get_data_request(request_id):
+        raise HTTPException(404, "데이터 요청을 찾을 수 없습니다")
+    try:
+        return database.set_data_request_status(request_id, body.status)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/data-requests/{request_id}/to-task")
+def api_data_request_to_task(request_id: int, _: dict = Depends(require_admin)):
+    """데이터 요청을 '데이터 연결' 업무 카드로 만든다."""
+    dr = database.get_data_request(request_id)
+    if not dr:
+        raise HTTPException(404, "데이터 요청을 찾을 수 없습니다")
+    description = f"분석가 요청 사유: {dr['reason']}"
+    if dr["suggested_dax"]:
+        description += (
+            "\n\n제안 DAX 쿼리 (config/queries.json에 추가):\n" + dr["suggested_dax"]
+        )
+    task = database.create_task(
+        title=f"데이터 연결: {dr['title']}",
+        description=description,
+        priority="medium",
+        category="데이터",
+        status="todo",
+        source="manual",
+        report_id=dr["report_id"],
+    )
+    database.set_data_request_status(request_id, "tasked")
+    return task
+
+
 # ── 페이지 ──────────────────────────────────────────────
 
 @app.get("/")

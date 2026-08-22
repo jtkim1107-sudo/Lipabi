@@ -80,6 +80,16 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (user_id, run_date)
             );
+            CREATE TABLE IF NOT EXISTS data_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id INTEGER REFERENCES reports(id) ON DELETE SET NULL,
+                title TEXT NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                suggested_dax TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 report_id INTEGER REFERENCES reports(id) ON DELETE SET NULL,
@@ -415,6 +425,68 @@ def list_reports(limit: int = 30) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM reports ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [_report_row(r) for r in rows]
+
+
+# ── 데이터 요청 ─────────────────────────────────────────
+
+DATA_REQUEST_STATUSES = ("open", "tasked", "resolved", "dismissed")
+
+
+def create_data_request(title: str, reason: str = "", suggested_dax: str = "",
+                        report_id: int | None = None) -> dict:
+    now = _now()
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO data_requests (report_id, title, reason, suggested_dax,
+                                          status, created_at, updated_at)
+               VALUES (?,?,?,?, 'open', ?, ?)""",
+            (report_id, title, reason, suggested_dax, now, now),
+        )
+        row = conn.execute(
+            "SELECT * FROM data_requests WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+        return dict(row)
+
+
+def list_data_requests(statuses: tuple[str, ...] | None = None) -> list[dict]:
+    q = "SELECT * FROM data_requests"
+    params: tuple = ()
+    if statuses:
+        q += f" WHERE status IN ({','.join('?' * len(statuses))})"
+        params = statuses
+    q += " ORDER BY id DESC"
+    with get_conn() as conn:
+        rows = conn.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_data_request(request_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM data_requests WHERE id = ?", (request_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def find_active_request_by_title(title: str) -> dict | None:
+    """이미 열려 있거나 업무화된 동일 제목의 요청 (중복 방지용)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM data_requests WHERE title = ? AND status IN ('open','tasked')",
+            (title,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def set_data_request_status(request_id: int, status: str) -> dict | None:
+    if status not in DATA_REQUEST_STATUSES:
+        raise ValueError(f"잘못된 상태값: {status}")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE data_requests SET status = ?, updated_at = ? WHERE id = ?",
+            (status, _now(), request_id),
+        )
+    return get_data_request(request_id)
 
 
 # ── 업무 ────────────────────────────────────────────────

@@ -33,7 +33,10 @@ def run_daily_pipeline() -> dict:
         )
 
     profile = database.get_agent_profile()
-    result = analyzer.analyze(query_results, run_date, profile, roster=_build_roster())
+    pending = [r["title"] for r in database.list_data_requests(statuses=("open", "tasked"))]
+    result = analyzer.analyze(
+        query_results, run_date, profile, roster=_build_roster(), pending_requests=pending
+    )
 
     data_notes = "; ".join(errors)
     report_id = database.create_report(
@@ -57,6 +60,19 @@ def run_daily_pipeline() -> dict:
         )
         created.append(task)
 
+    # 분석가의 데이터 요청 저장 (열려 있는 동일 요청은 중복 생성 안 함)
+    requests_created = 0
+    for dr in result.data_requests:
+        if database.find_active_request_by_title(dr.title):
+            continue
+        database.create_data_request(
+            title=dr.title,
+            reason=dr.reason,
+            suggested_dax=dr.suggested_dax or "",
+            report_id=report_id,
+        )
+        requests_created += 1
+
     # 아침 자동화: 분석 직후 전 직원 브리핑을 미리 생성해 둔다
     briefings_created = 0
     if config.AUTO_BRIEFINGS:
@@ -78,5 +94,6 @@ def run_daily_pipeline() -> dict:
         "insights": result.insights,
         "tasks_created": len(created),
         "briefings_created": briefings_created,
+        "data_requests_created": requests_created,
         "data_errors": errors,
     }

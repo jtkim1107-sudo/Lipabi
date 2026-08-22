@@ -57,6 +57,31 @@ h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 #report-insights li { margin: 3px 0; line-height: 1.6; color: #444; }
 .report-notes { color: var(--high); font-size: 12px; }
 
+/* ── 데이터 요청 ── */
+.data-requests {
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.data-requests h3 { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+.data-requests ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.dr-item {
+  border: 1px dashed var(--border); border-radius: 6px; padding: 10px 12px;
+}
+.dr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dr-title { font-size: 13px; font-weight: 600; }
+.dr-status {
+  font-size: 10.5px; color: var(--medium); border: 1px solid var(--medium);
+  border-radius: 4px; padding: 1px 5px;
+}
+.dr-actions { margin-left: auto; display: flex; gap: 6px; }
+.dr-reason { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.55; }
+.dr-item details { margin-top: 6px; }
+.dr-item summary { font-size: 11.5px; color: var(--muted); cursor: pointer; }
+.dr-item pre {
+  background: var(--bg); border-radius: 4px; padding: 8px 10px;
+  font-size: 12px; margin-top: 6px; overflow-x: auto;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

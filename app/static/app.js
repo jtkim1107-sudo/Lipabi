@@ -2,6 +2,7 @@
 
 let tasks = [];
 let latestReportId = null;
+let currentUser = null;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -50,6 +51,92 @@ async function loadReport() {
   }
   const notes = document.getElementById("report-notes");
   notes.textContent = report.data_notes ? `⚠️ ${report.data_notes}` : "";
+}
+
+/* ── 분석가의 데이터 요청 ────────────────────── */
+
+async function loadDataRequests() {
+  const requests = await api("/api/data-requests");
+  const box = document.getElementById("data-requests");
+  const list = document.getElementById("data-requests-list");
+  list.innerHTML = "";
+  if (!requests.length) {
+    box.classList.add("hidden");
+    return;
+  }
+  box.classList.remove("hidden");
+  const isAdmin = currentUser?.role === "admin";
+
+  for (const dr of requests) {
+    const li = document.createElement("li");
+    li.className = "dr-item";
+
+    const head = document.createElement("div");
+    head.className = "dr-head";
+    const title = document.createElement("span");
+    title.className = "dr-title";
+    title.textContent = dr.title;
+    head.appendChild(title);
+    if (dr.status === "tasked") {
+      const st = document.createElement("span");
+      st.className = "dr-status";
+      st.textContent = "업무 생성됨";
+      head.appendChild(st);
+    }
+
+    if (isAdmin) {
+      const actions = document.createElement("div");
+      actions.className = "dr-actions";
+      const mk = (label, fn) => {
+        const b = document.createElement("button");
+        b.className = "btn-mini";
+        b.textContent = label;
+        b.onclick = fn;
+        actions.appendChild(b);
+      };
+      if (dr.status === "open") {
+        mk("업무로 만들기", async () => {
+          await api(`/api/data-requests/${dr.id}/to-task`, { method: "POST" });
+          toast("데이터 연결 업무를 만들었습니다");
+          await Promise.all([loadDataRequests(), loadTasks()]);
+        });
+      }
+      mk("해결됨", async () => {
+        await api(`/api/data-requests/${dr.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "resolved" }),
+        });
+        toast("해결로 표시했습니다 — 다음 분석부터 다시 요청될 수 있습니다");
+        await loadDataRequests();
+      });
+      mk("무시", async () => {
+        await api(`/api/data-requests/${dr.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "dismissed" }),
+        });
+        await loadDataRequests();
+      });
+      head.appendChild(actions);
+    }
+    li.appendChild(head);
+
+    if (dr.reason) {
+      const reason = document.createElement("div");
+      reason.className = "dr-reason";
+      reason.textContent = dr.reason;
+      li.appendChild(reason);
+    }
+    if (dr.suggested_dax) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "제안 DAX 쿼리 보기";
+      const pre = document.createElement("pre");
+      pre.textContent = dr.suggested_dax;
+      details.append(summary, pre);
+      li.appendChild(details);
+    }
+    list.appendChild(li);
+  }
 }
 
 /* ── 칸반보드 ────────────────────────────────── */
@@ -267,6 +354,7 @@ function setupDeliverableModal() {
 
 async function loadMe() {
   const me = await api("/api/me");
+  currentUser = me;
   document.getElementById("user-name").textContent = `${me.name}님`;
   if (me.role === "admin") {
     document.getElementById("manage-users-btn").classList.remove("hidden");
@@ -652,7 +740,7 @@ function setupActions() {
     try {
       const result = await runAnalysis();
       toast(`분석 완료! 업무 ${result.tasks_created}건이 추가됐습니다`);
-      await Promise.all([loadReport(), loadTasks()]);
+      await Promise.all([loadReport(), loadTasks(), loadDataRequests()]);
     } catch (err) {
       toast(err.message);
     } finally {
@@ -681,6 +769,7 @@ function setupActions() {
   setupDeliverableModal();
   setupReportFeedback();
   await Promise.all([loadMe(), loadReport(), loadTasks()]);
+  await loadDataRequests(); // currentUser 로드 후 (관리자 버튼 표시 여부)
   // 다른 직원의 변경 사항을 주기적으로 반영
   setInterval(loadTasks, 15000);
 })();

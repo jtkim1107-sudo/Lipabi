@@ -22,10 +22,23 @@ class SuggestedTask(BaseModel):
     )
 
 
+class DataRequestItem(BaseModel):
+    title: str = Field(description="필요한 데이터 한 줄 (예: '제품별 재고 수량과 입고 예정일')")
+    reason: str = Field(description="이 데이터가 있으면 어떤 분석/판단이 가능해지는지")
+    suggested_dax: Optional[str] = Field(
+        default=None,
+        description="Power BI에 있을 법한 데이터면 EVALUATE로 시작하는 예시 DAX 쿼리, 외부 데이터면 null",
+    )
+
+
 class AnalysisResult(BaseModel):
     summary: str = Field(description="오늘 데이터의 핵심 요약 (2~4문장)")
     insights: List[str] = Field(description="주목할 만한 발견/이상 징후/트렌드 목록")
     tasks: List[SuggestedTask] = Field(description="오늘 팀이 실행해야 할 업무 제안 (3~7개)")
+    data_requests: List[DataRequestItem] = Field(
+        default_factory=list,
+        description="분석에 꼭 필요한데 지금 없는 데이터 요청 (0~3개, 정말 필요한 것만)",
+    )
 
 
 BASE_SYSTEM_PROMPT = """당신은 회사의 데이터 분석가입니다. 매일 아침 Power BI에서 수집된 \
@@ -36,6 +49,8 @@ BASE_SYSTEM_PROMPT = """당신은 회사의 데이터 분석가입니다. 매일
 - 인사이트는 "그래서 무엇을 해야 하는가"로 이어지도록 작성합니다.
 - 업무 제안은 담당자가 읽고 바로 착수할 수 있을 만큼 구체적으로 작성합니다.
 - 급격한 하락, 이상치, 전일/전주 대비 변화에 특히 주목합니다.
+- 분석에 꼭 필요한 데이터가 없어서 판단이 제한되면, 추측하지 말고 data_requests로
+  그 데이터를 요청합니다 (무엇이, 왜 필요한지). 이미 대기 중인 요청은 다시 요청하지 않습니다.
 - 모든 출력은 한국어로 작성합니다."""
 
 
@@ -63,7 +78,7 @@ def build_system_prompt(profile: dict | None) -> str:
 
 
 def analyze(query_results: list[dict], run_date: str, profile: dict | None = None,
-            roster: str = "") -> AnalysisResult:
+            roster: str = "", pending_requests: list[str] | None = None) -> AnalysisResult:
     """수집된 데이터를 Claude에 보내 구조화된 분석 결과를 받는다."""
     sections = []
     for r in query_results:
@@ -79,11 +94,18 @@ def analyze(query_results: list[dict], run_date: str, profile: dict | None = Non
             + "\n\n업무마다 이 명단에서 가장 적합한 담당자를 suggested_assignee로 추천하세요. "
             "역할과 팀이 맞는 사람이 없으면 null로 두세요."
         )
+    pending_section = ""
+    if pending_requests:
+        pending_section = (
+            "\n\n## 이미 요청되어 대기 중인 데이터 (중복 요청 금지)\n"
+            + "\n".join(f"- {t}" for t in pending_requests)
+        )
     user_message = (
         f"오늘 날짜: {run_date}\n\n"
         f"아래는 오늘 아침 Power BI에서 수집한 데이터입니다.\n\n"
         + "\n\n".join(sections)
         + roster_section
+        + pending_section
         + "\n\n이 데이터를 분석해 요약, 인사이트, 그리고 오늘 팀이 실행할 업무 목록을 만들어 주세요."
     )
 
