@@ -80,6 +80,13 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (user_id, run_date)
             );
+            CREATE TABLE IF NOT EXISTS reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id INTEGER REFERENCES reports(id) ON DELETE SET NULL,
+                run_date TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS data_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 report_id INTEGER REFERENCES reports(id) ON DELETE SET NULL,
@@ -429,6 +436,27 @@ def list_reports(limit: int = 30) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM reports ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [_report_row(r) for r in rows]
+
+
+# ── 자기 채점 ───────────────────────────────────────────
+
+def save_review(report_id: int, run_date: str, content: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO reviews (report_id, run_date, content, created_at) VALUES (?,?,?,?)",
+            (report_id, run_date, content, _now()),
+        )
+        return cur.lastrowid
+
+
+def get_latest_review() -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM reviews ORDER BY id DESC LIMIT 1").fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["content"] = json.loads(d["content"])
+        return d
 
 
 # ── 데이터 요청 ─────────────────────────────────────────

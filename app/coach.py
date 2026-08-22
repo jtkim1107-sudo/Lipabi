@@ -19,6 +19,7 @@ KIND_LABEL = {
     "task_accepted": "AI 제안 업무 수락",
     "task_rejected": "AI 제안 업무 삭제",
     "task": "업무",
+    "self_review": "자기 채점 (어제 인사이트를 오늘 데이터로 검증해 얻은 교훈)",
 }
 
 

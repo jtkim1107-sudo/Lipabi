@@ -3,7 +3,9 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from . import analyzer, briefer, config, database, powerbi
+import json
+
+from . import analyzer, briefer, config, database, powerbi, reviewer
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +54,41 @@ def run_daily_pipeline() -> dict:
             + "; ".join(errors)
         )
 
+    # 자기 채점: 어제 리포트를 오늘 데이터로 검증 (오늘 리포트 생성 전에 수행)
+    self_review_text = ""
+    review_stats = None
+    prev_report = database.get_latest_report()
+    if config.SELF_REVIEW and prev_report and prev_report["run_date"] != run_date:
+        try:
+            sr = reviewer.review(prev_report, query_results, run_date)
+            database.save_review(
+                prev_report["id"], run_date,
+                json.dumps(sr.model_dump(), ensure_ascii=False),
+            )
+            # 틀린 데서 나온 교훈은 피드백으로 축적 → 주간 학습에 자동 반영
+            for lesson in sr.lessons:
+                database.add_feedback(
+                    kind="self_review",
+                    signal="negative",
+                    ref_id=prev_report["id"],
+                    comment=lesson,
+                    context="자기 채점",
+                    user_name="분석가(자동)",
+                )
+            self_review_text = reviewer.to_prompt_text(sr)
+            review_stats = {
+                "graded": len(sr.verdicts),
+                "wrong": sum(1 for v in sr.verdicts if v.verdict == "wrong"),
+                "lessons": len(sr.lessons),
+            }
+        except Exception:
+            logger.exception("자기 채점 실패 — 오늘 분석은 계속 진행")
+
     profile = database.get_agent_profile()
     pending = [r["title"] for r in database.list_data_requests(statuses=("open", "tasked"))]
     result = analyzer.analyze(
-        query_results, run_date, profile, roster=_build_roster(), pending_requests=pending
+        query_results, run_date, profile, roster=_build_roster(),
+        pending_requests=pending, self_review=self_review_text,
     )
 
     data_notes = "; ".join(errors)
@@ -122,5 +155,6 @@ def run_daily_pipeline() -> dict:
         "briefings_created": briefings_created,
         "data_requests_created": requests_created,
         "blocking_tasks_created": blocking_tasks,
+        "self_review": review_stats,
         "data_errors": errors,
     }

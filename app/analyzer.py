@@ -84,7 +84,8 @@ def build_system_prompt(profile: dict | None) -> str:
 
 
 def analyze(query_results: list[dict], run_date: str, profile: dict | None = None,
-            roster: str = "", pending_requests: list[str] | None = None) -> AnalysisResult:
+            roster: str = "", pending_requests: list[str] | None = None,
+            self_review: str = "") -> AnalysisResult:
     """수집된 데이터를 Claude에 보내 구조화된 분석 결과를 받는다."""
     sections = []
     for r in query_results:
@@ -100,6 +101,14 @@ def analyze(query_results: list[dict], run_date: str, profile: dict | None = Non
             + "\n\n업무마다 이 명단에서 가장 적합한 담당자를 suggested_assignee로 추천하세요. "
             "역할과 팀이 맞는 사람이 없으면 null로 두세요."
         )
+    review_section = ""
+    if self_review.strip():
+        review_section = (
+            "\n\n## 어제 분석 자기 채점 결과\n"
+            "어제 당신의 인사이트를 오늘 데이터로 검증한 결과입니다. "
+            "틀렸던 유형의 판단을 반복하지 말고, 맞았던 관점은 이어가세요.\n"
+            + self_review.strip()
+        )
     pending_section = ""
     if pending_requests:
         pending_section = (
@@ -110,6 +119,7 @@ def analyze(query_results: list[dict], run_date: str, profile: dict | None = Non
         f"오늘 날짜: {run_date}\n\n"
         f"아래는 오늘 아침 Power BI에서 수집한 데이터입니다.\n\n"
         + "\n\n".join(sections)
+        + review_section
         + roster_section
         + pending_section
         + "\n\n이 데이터를 분석해 요약, 인사이트, 그리고 오늘 팀이 실행할 업무 목록을 만들어 주세요."

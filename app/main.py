@@ -523,6 +523,11 @@ def api_latest_report(_: dict = Depends(require_user)):
     return report or {}
 
 
+@app.get("/api/reviews/latest")
+def api_latest_review(_: dict = Depends(require_user)):
+    return database.get_latest_review() or {}
+
+
 @app.get("/api/reports")
 def api_list_reports(_: dict = Depends(require_user)):
     return database.list_reports()

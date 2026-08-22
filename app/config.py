@@ -25,6 +25,8 @@ TIMEZONE = os.getenv("TIMEZONE", "Asia/Seoul")
 AUTO_BRIEFINGS = os.getenv("AUTO_BRIEFINGS", "true").lower() in ("1", "true", "yes")
 # 주간 자동 학습 (요일 시:분, 예: "mon 06:30"). 비우면 비활성화
 WEEKLY_TRAIN = os.getenv("WEEKLY_TRAIN", "mon 06:30")
+# 자기 채점: 매일 어제 인사이트를 오늘 데이터로 검증
+SELF_REVIEW = os.getenv("SELF_REVIEW", "true").lower() in ("1", "true", "yes")
 
 RUN_TOKEN = os.getenv("RUN_TOKEN", "")
 

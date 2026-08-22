@@ -53,6 +53,46 @@ async function loadReport() {
   notes.textContent = report.data_notes ? `⚠️ ${report.data_notes}` : "";
 }
 
+/* ── 자기 채점 ───────────────────────────────── */
+
+async function loadSelfReview() {
+  const review = await api("/api/reviews/latest");
+  const box = document.getElementById("self-review");
+  if (!review || !review.content) {
+    box.classList.add("hidden");
+    return;
+  }
+  const c = review.content;
+  box.classList.remove("hidden");
+
+  const total = c.verdicts.length;
+  const correct = c.verdicts.filter((v) => v.verdict === "correct").length;
+  const wrong = c.verdicts.filter((v) => v.verdict === "wrong").length;
+  document.getElementById("review-score").textContent =
+    `— ${total}개 중 맞음 ${correct} · 틀림 ${wrong} (${review.run_date} 데이터로 검증)`;
+
+  const marks = { correct: ["✓", "correct"], wrong: ["✗", "wrong"], unverifiable: ["─", "unverifiable"] };
+  const list = document.getElementById("review-list");
+  list.innerHTML = "";
+  for (const v of c.verdicts) {
+    const li = document.createElement("li");
+    li.className = "rv-item";
+    const mark = document.createElement("span");
+    const [symbol, cls] = marks[v.verdict] || ["?", "unverifiable"];
+    mark.className = `rv-mark ${cls}`;
+    mark.textContent = symbol;
+    const body = document.createElement("span");
+    body.textContent = v.insight + " ";
+    const ev = document.createElement("span");
+    ev.className = "rv-evidence";
+    ev.textContent = `— ${v.evidence}`;
+    body.appendChild(ev);
+    li.append(mark, body);
+    list.appendChild(li);
+  }
+  document.getElementById("review-note").textContent = c.accuracy_note || "";
+}
+
 /* ── 분석가의 데이터 요청 ────────────────────── */
 
 async function loadDataRequests() {
@@ -755,7 +795,7 @@ function setupActions() {
     try {
       const result = await runAnalysis();
       toast(`분석 완료! 업무 ${result.tasks_created}건이 추가됐습니다`);
-      await Promise.all([loadReport(), loadTasks(), loadDataRequests()]);
+      await Promise.all([loadReport(), loadTasks(), loadDataRequests(), loadSelfReview()]);
     } catch (err) {
       toast(err.message);
     } finally {
@@ -783,7 +823,7 @@ function setupActions() {
   setupBriefing();
   setupDeliverableModal();
   setupReportFeedback();
-  await Promise.all([loadMe(), loadReport(), loadTasks()]);
+  await Promise.all([loadMe(), loadReport(), loadTasks(), loadSelfReview()]);
   await loadDataRequests(); // currentUser 로드 후 (관리자 버튼 표시 여부)
   // 다른 직원의 변경 사항을 주기적으로 반영
   setInterval(loadTasks, 15000);
