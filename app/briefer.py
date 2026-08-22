@@ -112,6 +112,7 @@ def generate(user: dict, run_date: str) -> Briefing:
             "category": t["category"],
             "status": t["status"],
             "assignee": t["assignee"] or "(미배정)",
+            "blocked": bool(t.get("blocked")),
         }
         for t in relevant
     ]

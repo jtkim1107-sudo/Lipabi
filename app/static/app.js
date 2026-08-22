@@ -198,7 +198,7 @@ async function loadDataRequests() {
 
 function renderCard(task) {
   const card = document.createElement("div");
-  card.className = `card pri-${task.priority}`;
+  card.className = `card pri-${task.priority}${task.blocked ? " is-blocked" : ""}`;
   card.draggable = true;
   card.dataset.id = task.id;
 
@@ -265,6 +265,20 @@ function renderCard(task) {
     };
     meta.appendChild(suggest);
   }
+
+  if (task.blocked) {
+    const bl = document.createElement("span");
+    bl.className = "blocked-badge";
+    bl.textContent = "⛔ 막힘";
+    meta.appendChild(bl);
+  }
+
+  // 진행 메모
+  const memoBtn = document.createElement("button");
+  memoBtn.className = "btn-mini";
+  memoBtn.textContent = "💬 메모";
+  memoBtn.onclick = () => openComments(task);
+  meta.appendChild(memoBtn);
 
   // AI에게 업무 맡기기 / 결과물 보기
   if (task.deliverable) {
@@ -361,6 +375,193 @@ function setupDragAndDrop() {
       }
     });
   }
+}
+
+/* ── 진행 메모 / 막힘 ────────────────────────── */
+
+let commentsTaskId = null;
+
+async function refreshComments(taskId) {
+  const comments = await api(`/api/tasks/${taskId}/comments`);
+  const list = document.getElementById("comments-list");
+  list.innerHTML = "";
+  if (!comments.length) {
+    const li = document.createElement("li");
+    li.className = "comment-meta";
+    li.textContent = "아직 메모가 없습니다.";
+    list.appendChild(li);
+  }
+  for (const c of comments) {
+    const li = document.createElement("li");
+    li.className = `comment-item${c.is_blocker ? " blocker" : ""}`;
+    const meta = document.createElement("div");
+    meta.className = "comment-meta";
+    const when = new Date(c.created_at).toLocaleString("ko-KR", {
+      month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+    meta.textContent = `${c.user_name} · ${when}${c.is_blocker ? " · ⛔ 막힘" : ""}`;
+    const text = document.createElement("div");
+    text.className = "comment-text";
+    text.textContent = c.text;
+    li.append(meta, text);
+    list.appendChild(li);
+  }
+}
+
+async function openComments(task) {
+  commentsTaskId = task.id;
+  document.getElementById("comments-title").textContent = `진행 메모 — ${task.title}`;
+  document.getElementById("unblock-btn").classList.toggle("hidden", !task.blocked);
+  document.getElementById("comment-text").value = "";
+  document.getElementById("comment-blocker").checked = false;
+  await refreshComments(task.id);
+  document.getElementById("comments-modal").classList.remove("hidden");
+}
+
+function setupCommentsModal() {
+  const modal = document.getElementById("comments-modal");
+  document.getElementById("close-comments-modal").onclick = () => modal.classList.add("hidden");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+
+  document.getElementById("add-comment-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = document.getElementById("comment-text").value.trim();
+    if (!text || !commentsTaskId) return;
+    const isBlocker = document.getElementById("comment-blocker").checked;
+    try {
+      await api(`/api/tasks/${commentsTaskId}/comments`, {
+        method: "POST",
+        body: JSON.stringify({ text, is_blocker: isBlocker }),
+      });
+      document.getElementById("comment-text").value = "";
+      document.getElementById("comment-blocker").checked = false;
+      if (isBlocker) {
+        document.getElementById("unblock-btn").classList.remove("hidden");
+        toast("막힘으로 표시했습니다 — 팀장/관리자에게 보입니다");
+      } else {
+        toast("메모를 남겼습니다");
+      }
+      await Promise.all([refreshComments(commentsTaskId), loadTasks()]);
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+
+  document.getElementById("unblock-btn").onclick = async () => {
+    if (!commentsTaskId) return;
+    await api(`/api/tasks/${commentsTaskId}/unblock`, { method: "POST" });
+    document.getElementById("unblock-btn").classList.add("hidden");
+    toast("막힘을 해제했습니다");
+    await loadTasks();
+  };
+}
+
+/* ── 일일 업무 보고 ──────────────────────────── */
+
+function renderWorkReport(r) {
+  const body = document.getElementById("work-report-body");
+  body.innerHTML = "";
+  document.getElementById("work-report-title").innerHTML =
+    `일일 업무 보고<span class="wr-date">${r.run_date || ""}</span>`;
+
+  const summary = document.createElement("p");
+  summary.className = "wr-summary";
+  summary.textContent = r.summary;
+  body.appendChild(summary);
+
+  const section = (title, cls) => {
+    const div = document.createElement("div");
+    div.className = "wr-section";
+    const h = document.createElement("h3");
+    h.textContent = title;
+    div.appendChild(h);
+    body.appendChild(div);
+    return div;
+  };
+
+  if (r.highlights?.length) {
+    const s = section("주요 진전");
+    const ul = document.createElement("ul");
+    ul.className = "wr-list";
+    for (const h of r.highlights) {
+      const li = document.createElement("li");
+      li.textContent = h;
+      ul.appendChild(li);
+    }
+    s.appendChild(ul);
+  }
+
+  if (r.blockers?.length) {
+    const s = section("⛔ 막힘 / 조치 필요");
+    const ul = document.createElement("ul");
+    ul.className = "wr-list blockers";
+    for (const b of r.blockers) {
+      const li = document.createElement("li");
+      li.textContent = b;
+      ul.appendChild(li);
+    }
+    s.appendChild(ul);
+  }
+
+  if (r.by_person?.length) {
+    const s = section("사람별 현황");
+    for (const p of r.by_person) {
+      const box = document.createElement("div");
+      box.className = "wr-person";
+      const name = document.createElement("div");
+      name.className = "wr-person-name";
+      name.textContent = p.name;
+      box.appendChild(name);
+      const ul = document.createElement("ul");
+      ul.className = "wr-list";
+      for (const item of p.items) {
+        const li = document.createElement("li");
+        li.textContent = item;
+        ul.appendChild(li);
+      }
+      box.appendChild(ul);
+      s.appendChild(box);
+    }
+  }
+}
+
+function setupWorkReport() {
+  const modal = document.getElementById("work-report-modal");
+  document.getElementById("close-work-report-modal").onclick = () => modal.classList.add("hidden");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+
+  document.getElementById("work-report-btn").onclick = async () => {
+    modal.classList.remove("hidden");
+    if (["admin", "leader"].includes(currentUser?.role)) {
+      document.getElementById("run-work-report-btn").classList.remove("hidden");
+    }
+    const latest = await api("/api/work-reports/latest");
+    if (latest && latest.content) renderWorkReport({ ...latest.content, run_date: latest.run_date });
+  };
+
+  const runBtn = document.getElementById("run-work-report-btn");
+  runBtn.onclick = async () => {
+    runBtn.disabled = true;
+    runBtn.textContent = "생성 중…";
+    try {
+      const result = await api("/api/work-reports/run", { method: "POST" });
+      if (result.generated === false) {
+        toast(result.message);
+      } else {
+        renderWorkReport(result);
+        toast("업무 보고를 생성했습니다");
+      }
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = "지금 생성";
+    }
+  };
 }
 
 /* ── AI 결과물 모달 ──────────────────────────── */
@@ -822,6 +1023,8 @@ function setupActions() {
   setupMyAgentModal();
   setupBriefing();
   setupDeliverableModal();
+  setupCommentsModal();
+  setupWorkReport();
   setupReportFeedback();
   await Promise.all([loadMe(), loadReport(), loadTasks(), loadSelfReview()]);
   await loadDataRequests(); // currentUser 로드 후 (관리자 버튼 표시 여부)

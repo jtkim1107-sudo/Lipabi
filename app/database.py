@@ -80,6 +80,30 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (user_id, run_date)
             );
+            CREATE TABLE IF NOT EXISTS activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day TEXT NOT NULL,
+                task_id INTEGER,
+                task_title TEXT NOT NULL DEFAULT '',
+                user_name TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL,
+                detail TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS task_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                user_name TEXT NOT NULL DEFAULT '',
+                text TEXT NOT NULL,
+                is_blocker INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS work_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_date TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS reviews (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 report_id INTEGER REFERENCES reports(id) ON DELETE SET NULL,
@@ -108,6 +132,7 @@ def init_db() -> None:
                 status TEXT NOT NULL DEFAULT 'suggested',
                 assignee TEXT NOT NULL DEFAULT '',
                 source TEXT NOT NULL DEFAULT 'manual',
+                blocked INTEGER NOT NULL DEFAULT 0,
                 suggested_assignee TEXT NOT NULL DEFAULT '',
                 deliverable TEXT NOT NULL DEFAULT '',
                 deliverable_summary TEXT NOT NULL DEFAULT '',
@@ -138,6 +163,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     dr_cols = {r[1] for r in conn.execute("PRAGMA table_info(data_requests)")}
     if "blocking" not in dr_cols:
         conn.execute("ALTER TABLE data_requests ADD COLUMN blocking INTEGER NOT NULL DEFAULT 0")
+    task_cols2 = {r[1] for r in conn.execute("PRAGMA table_info(tasks)")}
+    if "blocked" not in task_cols2:
+        conn.execute("ALTER TABLE tasks ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0")
 
 
 # ── 에이전트 프로필 ─────────────────────────────────────
@@ -436,6 +464,86 @@ def list_reports(limit: int = 30) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM reports ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [_report_row(r) for r in rows]
+
+
+# ── 활동 로그 ───────────────────────────────────────────
+
+def log_activity(day: str, kind: str, task_id: int | None = None, task_title: str = "",
+                 user_name: str = "", detail: str = "") -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO activities (day, task_id, task_title, user_name, kind, detail, created_at)
+               VALUES (?,?,?,?,?,?,?)""",
+            (day, task_id, task_title, user_name, kind, detail, _now()),
+        )
+
+
+def list_activities(day: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM activities WHERE day = ? ORDER BY id", (day,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── 업무 코멘트 (진행 메모 / 막힘) ──────────────────────
+
+def add_task_comment(task_id: int, user_name: str, text: str, is_blocker: bool = False) -> dict:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO task_comments (task_id, user_name, text, is_blocker, created_at) "
+            "VALUES (?,?,?,?,?)",
+            (task_id, user_name, text, int(is_blocker), _now()),
+        )
+        if is_blocker:
+            conn.execute(
+                "UPDATE tasks SET blocked = 1, updated_at = ? WHERE id = ?",
+                (_now(), task_id),
+            )
+        row = conn.execute(
+            "SELECT * FROM task_comments WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+        return dict(row)
+
+
+def list_task_comments(task_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM task_comments WHERE task_id = ? ORDER BY id", (task_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def set_task_blocked(task_id: int, blocked: bool) -> dict | None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE tasks SET blocked = ?, updated_at = ? WHERE id = ?",
+            (int(blocked), _now(), task_id),
+        )
+    return get_task(task_id)
+
+
+# ── 업무 보고 ───────────────────────────────────────────
+
+def save_work_report(run_date: str, content: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO work_reports (run_date, content, created_at) VALUES (?,?,?)",
+            (run_date, content, _now()),
+        )
+        return cur.lastrowid
+
+
+def get_latest_work_report() -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM work_reports ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["content"] = json.loads(d["content"])
+        return d
 
 
 # ── 자기 채점 ───────────────────────────────────────────

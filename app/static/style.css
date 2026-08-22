@@ -57,6 +57,36 @@ h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 #report-insights li { margin: 3px 0; line-height: 1.6; color: #444; }
 .report-notes { color: var(--high); font-size: 12px; }
 
+/* ── 진행 메모 / 막힘 ── */
+.blocked-badge {
+  font-size: 10.5px; color: var(--high); border: 1px solid var(--high);
+  border-radius: 4px; padding: 1px 6px; font-weight: 600;
+}
+.card.is-blocked { border-color: var(--high); }
+.comments-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; max-height: 40vh; overflow-y: auto; }
+.comment-item { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
+.comment-item.blocker { border-color: var(--high); }
+.comment-meta { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.comment-text { font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+.add-comment-form textarea {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 13px; font-family: inherit; resize: vertical;
+}
+.add-comment-form textarea:focus { outline: none; border-color: var(--muted); }
+.comment-form-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+.blocker-check { font-size: 12.5px; color: var(--muted); cursor: pointer; display: flex; gap: 6px; align-items: center; }
+
+/* ── 일일 업무 보고 ── */
+.wr-section { margin-top: 14px; }
+.wr-section h3 { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.wr-summary { font-size: 14px; line-height: 1.65; }
+.wr-list { padding-left: 18px; }
+.wr-list li { font-size: 13px; margin: 4px 0; line-height: 1.55; }
+.wr-list.blockers li { color: var(--high); }
+.wr-person { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-top: 8px; }
+.wr-person-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.wr-date { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+
 /* ── 자기 채점 ── */
 .self-review {
   margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);

@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from datetime import datetime as dt
 from zoneinfo import ZoneInfo
 
-from . import auth, briefer, coach, config, database, pipeline, worker
+from . import auth, briefer, coach, config, database, pipeline, reporter, worker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -35,6 +35,14 @@ def _scheduled_run():
         logger.info("자동 분석 완료: %s", result["summary"][:100])
     except Exception:
         logger.exception("자동 분석 실패")
+
+
+def _scheduled_work_report():
+    try:
+        result = reporter.run_and_save(_today())
+        logger.info("저녁 업무 보고: %s", result.get("summary", result.get("message")))
+    except Exception:
+        logger.exception("저녁 업무 보고 생성 실패")
 
 
 def _scheduled_weekly_train():
@@ -84,6 +92,15 @@ async def lifespan(app: FastAPI):
         id="daily_analysis",
         replace_existing=True,
     )
+    if config.DAILY_REPORT_TIME.strip():
+        r_hour, r_minute = config.DAILY_REPORT_TIME.split(":")
+        scheduler.add_job(
+            _scheduled_work_report,
+            CronTrigger(hour=int(r_hour), minute=int(r_minute)),
+            id="daily_work_report",
+            replace_existing=True,
+        )
+        logger.info("매일 %s 업무 보고 예약됨", config.DAILY_REPORT_TIME)
     if config.WEEKLY_TRAIN.strip():
         try:
             day, hhmm = config.WEEKLY_TRAIN.strip().split()
@@ -448,11 +465,21 @@ def api_list_tasks(_: dict = Depends(require_user)):
     return database.list_tasks()
 
 
+STATUS_LABEL = {
+    "suggested": "AI 제안", "todo": "할 일", "in_progress": "진행 중", "done": "완료",
+}
+
+
 @app.post("/api/tasks")
-def api_create_task(body: TaskCreate, _: dict = Depends(require_user)):
+def api_create_task(body: TaskCreate, user: dict = Depends(require_user)):
     if body.status not in database.VALID_STATUSES:
         raise HTTPException(400, f"잘못된 상태값: {body.status}")
-    return database.create_task(**body.model_dump(), source="manual")
+    task = database.create_task(**body.model_dump(), source="manual")
+    database.log_activity(
+        _today(), "task_created", task_id=task["id"], task_title=task["title"],
+        user_name=user["name"],
+    )
+    return task
 
 
 @app.patch("/api/tasks/{task_id}")
@@ -464,6 +491,18 @@ def api_update_task(task_id: int, body: TaskUpdate, user: dict = Depends(require
         task = database.update_task(task_id, body.model_dump(exclude_unset=True))
     except ValueError as e:
         raise HTTPException(400, str(e))
+    # 활동 기록 (보고 자동화의 원천)
+    if task["status"] != before["status"]:
+        database.log_activity(
+            _today(), "status_changed", task_id=task_id, task_title=task["title"],
+            user_name=user["name"],
+            detail=f"{STATUS_LABEL.get(before['status'])} → {STATUS_LABEL.get(task['status'])}",
+        )
+    if task["assignee"] != before["assignee"] and task["assignee"]:
+        database.log_activity(
+            _today(), "assigned", task_id=task_id, task_title=task["title"],
+            user_name=user["name"], detail=f"담당: {task['assignee']}",
+        )
     # 암묵적 학습 신호: AI 제안을 실제 업무로 수락하면 긍정 피드백
     if (
         before["source"] == "ai"
@@ -487,6 +526,10 @@ def api_delete_task(task_id: int, user: dict = Depends(require_user), reason: st
     if task is None:
         raise HTTPException(404, "업무를 찾을 수 없습니다")
     database.delete_task(task_id)
+    database.log_activity(
+        _today(), "task_deleted", task_id=task_id, task_title=task["title"],
+        user_name=user["name"], detail=reason.strip(),
+    )
     # 암묵적 학습 신호: AI 제안을 채택 없이 삭제하면 부정 피드백
     if task["source"] == "ai" and task["status"] == "suggested":
         database.add_feedback(
@@ -514,7 +557,78 @@ def api_delegate_task(task_id: int, user: dict = Depends(require_user)):
     except Exception as e:
         logger.exception("AI 업무 수행 실패")
         raise HTTPException(500, f"AI 업무 수행 실패: {e}")
+    database.log_activity(
+        _today(), "deliverable", task_id=task_id, task_title=task["title"],
+        user_name=user["name"], detail=product.summary,
+    )
     return database.set_task_deliverable(task_id, product.deliverable, product.summary)
+
+
+# ── 진행 메모 / 막힘 ────────────────────────────────────
+
+class CommentBody(BaseModel):
+    text: str
+    is_blocker: bool = False
+
+
+@app.get("/api/tasks/{task_id}/comments")
+def api_list_comments(task_id: int, _: dict = Depends(require_user)):
+    if not database.get_task(task_id):
+        raise HTTPException(404, "업무를 찾을 수 없습니다")
+    return database.list_task_comments(task_id)
+
+
+@app.post("/api/tasks/{task_id}/comments")
+def api_add_comment(task_id: int, body: CommentBody, user: dict = Depends(require_user)):
+    task = database.get_task(task_id)
+    if not task:
+        raise HTTPException(404, "업무를 찾을 수 없습니다")
+    if not body.text.strip():
+        raise HTTPException(400, "메모 내용을 입력하세요")
+    comment = database.add_task_comment(
+        task_id, user["name"], body.text.strip(), is_blocker=body.is_blocker
+    )
+    database.log_activity(
+        _today(), "blocker" if body.is_blocker else "comment",
+        task_id=task_id, task_title=task["title"],
+        user_name=user["name"], detail=body.text.strip(),
+    )
+    return comment
+
+
+@app.post("/api/tasks/{task_id}/unblock")
+def api_unblock_task(task_id: int, user: dict = Depends(require_user)):
+    task = database.get_task(task_id)
+    if not task:
+        raise HTTPException(404, "업무를 찾을 수 없습니다")
+    updated = database.set_task_blocked(task_id, False)
+    database.log_activity(
+        _today(), "unblocked", task_id=task_id, task_title=task["title"],
+        user_name=user["name"],
+    )
+    return updated
+
+
+# ── 업무 보고 ───────────────────────────────────────────
+
+def require_leader_or_admin(user: dict = Depends(require_user)) -> dict:
+    if user["role"] not in ("admin", "leader"):
+        raise HTTPException(403, "팀장 또는 관리자 권한이 필요합니다")
+    return user
+
+
+@app.get("/api/work-reports/latest")
+def api_latest_work_report(_: dict = Depends(require_user)):
+    return database.get_latest_work_report() or {}
+
+
+@app.post("/api/work-reports/run")
+def api_run_work_report(_: dict = Depends(require_leader_or_admin)):
+    try:
+        return reporter.run_and_save(_today())
+    except Exception as e:
+        logger.exception("업무 보고 생성 실패")
+        raise HTTPException(500, f"업무 보고 생성 실패: {e}")
 
 
 @app.get("/api/reports/latest")

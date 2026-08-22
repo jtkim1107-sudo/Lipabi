@@ -27,6 +27,8 @@ AUTO_BRIEFINGS = os.getenv("AUTO_BRIEFINGS", "true").lower() in ("1", "true", "y
 WEEKLY_TRAIN = os.getenv("WEEKLY_TRAIN", "mon 06:30")
 # 자기 채점: 매일 어제 인사이트를 오늘 데이터로 검증
 SELF_REVIEW = os.getenv("SELF_REVIEW", "true").lower() in ("1", "true", "yes")
+# 저녁 업무 보고 자동 생성 시각 (HH:MM). 비우면 비활성화
+DAILY_REPORT_TIME = os.getenv("DAILY_REPORT_TIME", "18:00")
 
 RUN_TOKEN = os.getenv("RUN_TOKEN", "")
 

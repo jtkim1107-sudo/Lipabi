@@ -15,6 +15,7 @@
     <div class="header-right">
       <button id="run-btn" class="btn-primary">지금 분석 실행</button>
       <span id="user-name" class="user-name"></span>
+      <button id="work-report-btn" class="btn-ghost">업무 보고</button>
       <button id="briefing-btn" class="btn-ghost">오늘 브리핑</button>
       <button id="my-agent-btn" class="btn-ghost">내 에이전트</button>
       <button id="agent-btn" class="btn-ghost hidden">내 분석가</button>
@@ -179,6 +180,41 @@
       </div>
       <p id="deliverable-summary" class="deliverable-summary"></p>
       <pre id="deliverable-content" class="deliverable-box"></pre>
+    </div>
+  </div>
+
+  <div id="comments-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="comments-title">진행 메모</h2>
+        <div>
+          <button id="unblock-btn" class="btn-ghost hidden">막힘 해제</button>
+          <button id="close-comments-modal" class="btn-ghost">닫기</button>
+        </div>
+      </div>
+      <ul id="comments-list" class="comments-list"></ul>
+      <form id="add-comment-form" class="add-comment-form">
+        <textarea id="comment-text" rows="2" placeholder="진행 상황을 한 줄로 남겨 주세요 — 이 메모가 곧 보고가 됩니다" required></textarea>
+        <div class="comment-form-row">
+          <label class="blocker-check"><input type="checkbox" id="comment-blocker"> ⛔ 막힘 / 도움 필요</label>
+          <button type="submit" class="btn-primary">남기기</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="work-report-modal" class="modal-backdrop hidden">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2 id="work-report-title">일일 업무 보고</h2>
+        <div>
+          <button id="run-work-report-btn" class="btn-ghost hidden">지금 생성</button>
+          <button id="close-work-report-modal" class="btn-ghost">닫기</button>
+        </div>
+      </div>
+      <div id="work-report-body">
+        <p class="briefing-loading">아직 생성된 업무 보고가 없습니다.</p>
+      </div>
     </div>
   </div>
 
